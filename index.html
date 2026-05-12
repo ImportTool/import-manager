@@ -346,6 +346,7 @@
       <button class="subtab active" data-subtab="add">Add PPM</button>
       <button class="subtab" data-subtab="update">Update PPM</button>
       <button class="subtab" data-subtab="jobplan">Job Plans</button>
+      <button class="subtab" data-subtab="jobplanv2">Job Plans V2</button>
     </div>
   </div>
 
@@ -643,6 +644,74 @@
       <div style="padding: 10px 14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
         <span class="muted small" id="jpRowCount">0 rows</span>
         <button class="btn ghost" id="btnJpNewRow2">+ Add row</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Job Plans V2 (sub-panel under PPM) ===== -->
+  <div id="tabJobplanV2" class="tab-panel hidden">
+    <div class="panel" style="padding: 12px 14px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h3 style="margin:0 0 4px;">Job Plans <span class="muted small">— V2 (two-sheet workflow)</span></h3>
+          <p class="muted small" style="margin:0;">
+            Fill <b>Sheet 1 — Job Plans</b> with the basics (Name, Scope, Description). Then switch to <b>Sheet 2 — Tasks</b> and add tasks, linking each task to a plan by its <b>Job Plan Name</b>.
+            When you click Import, both sheets are validated and merged: one job plan per row on Sheet 1, with all matching tasks from Sheet 2 attached.
+          </p>
+        </div>
+        <div class="card-actions" style="margin:0;">
+          <button class="btn ghost" id="btnJpv2Template">Template</button>
+          <button class="btn ghost" id="btnJpv2Upload">Upload</button>
+          <input type="file" id="jpv2ExcelInput" accept=".xlsx,.xls,.csv" style="display:none" />
+          <button class="btn" id="btnJpv2NewRow">+ New row</button>
+          <button class="btn secondary" id="btnJpv2Validate">Validate both sheets</button>
+          <button class="btn success" id="btnJpv2Import">Import all</button>
+          <button class="btn ghost" id="btnJpv2RemoveDone">Remove imported</button>
+          <button class="btn ghost" id="btnJpv2ClearAll">Clear all</button>
+        </div>
+      </div>
+
+      <div class="freq-tabs" id="jpv2SubTabs" style="display:flex; gap:0; margin-top:12px; border-bottom:1px solid var(--line);">
+        <button class="freq-tab active" data-jpv2sub="plans">Sheet 1 — Job Plans</button>
+        <button class="freq-tab" data-jpv2sub="tasks">Sheet 2 — Tasks</button>
+      </div>
+
+      <details class="help" style="margin-top: 10px;">
+        <summary>How V2 differs from V1</summary>
+        <div class="help-body">
+          <b>V1</b> uses a single sheet — one row per task, with the job plan name repeated. Easy to import, but less intuitive for non-technical users.<br/><br/>
+          <b>V2</b> splits the same data across two sheets:
+          <ul style="margin:6px 0 6px 18px;">
+            <li><b>Sheet 1 — Job Plans:</b> one row per job plan. Define Name, Scope, Description, Publish flag.</li>
+            <li><b>Sheet 2 — Tasks:</b> one row per task. Reference the parent plan by its Job Plan Name. Section Name groups related tasks within a plan.</li>
+          </ul>
+          On import, V2 looks up each task's Job Plan Name in Sheet 1, groups them, and creates one job plan per Sheet 1 row using the same proven backend as V1. <b>Job Plan Name is the unique identifier — it must match exactly between sheets</b> (case-insensitive).
+        </div>
+      </details>
+
+      <details class="help" style="margin-top: 6px;">
+        <summary>Paste rows from Excel</summary>
+        <div class="help-body">
+          Paste tabular data into whichever sheet is active.
+          <textarea id="jpv2BulkPaste" placeholder="Paste rows here..." style="height:90px; margin-top:8px;"></textarea>
+          <div class="card-actions" style="margin-top:6px;">
+            <button class="btn" id="btnJpv2BulkParse">Parse &amp; add</button>
+            <button class="btn ghost" id="btnJpv2BulkClear">Clear paste box</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel" style="padding: 0;">
+      <div class="grid-scroll">
+        <table class="grid" id="jpv2Grid">
+          <thead><tr id="jpv2GridHead"></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div style="padding: 10px 14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+        <span class="muted small" id="jpv2RowCount">0 rows</span>
+        <button class="btn ghost" id="btnJpv2NewRow2">+ Add row</button>
       </div>
     </div>
   </div>
@@ -945,6 +1014,9 @@ const state = {
   activePort: "site",
   // Job Plan queue
   jpQueue: [],
+  // Job Plan V2 — two-sheet workflow (Plans on sheet 1, Tasks on sheet 2)
+  jpv2Queue: { plans: [], tasks: [] },
+  activeJpv2: "plans",
   // Assets queue (split add/update sub-tabs)
   assetQueue: { add: [], update: [] },
   activeAsset: "add",
@@ -1026,7 +1098,7 @@ function joinUrl(base, path) {
 // Worker), paste your Worker URL into REMOTE_PROXY_URL below.
 //
 // Example:  const REMOTE_PROXY_URL = "https://import-manager-proxy.yourname.workers.dev";
-const REMOTE_PROXY_URL = "https://facilioimporter.n-mithun1993.workers.dev";  // <-- PASTE YOUR CLOUDFLARE WORKER URL HERE
+const REMOTE_PROXY_URL = "";  // <-- PASTE YOUR CLOUDFLARE WORKER URL HERE
 // ================================
 
 function isLocalProxy() {
@@ -3024,6 +3096,291 @@ async function inspectJobPlanSchema() {
   log("None of the scanned job plans returned tasks via any endpoint shape we tried. Click Inspect schema again and enter a specific Job Plan ID (e.g. one you know has tasks).", "warn");
 }
 
+// ---------- Job Plans V2 (two-sheet workflow) ----------
+//
+// Same backend as V1 — one POST per job plan with nested taskSectionList.
+// The UI splits the data entry across two grids: plan basics on Sheet 1,
+// tasks on Sheet 2. Tasks reference plans by Job Plan Name (case-insensitive).
+// Reuses V1 helpers: buildJpTask, buildSectionList, buildJpRecordFromGroup,
+// publishJobPlan. We only need new column defs + the cross-sheet merge.
+
+const JPV2_PLAN_COLUMNS = [
+  { key:"_num",       label:"#",                 kind:"num",     width:"w-num",    sticky:true },
+  { key:"_status",    label:"Status",            kind:"status",  width:"w-status", sticky:true },
+  { key:"jobPlanName",label:"Job Plan Name *",   kind:"text",    width:"w-md" },
+  { key:"scope",      label:"Scope *",           kind:"select",  width:"w-md",
+    options:["","Asset Category","Space Category","Asset","Space","Building","Site","Floor"] },
+  { key:"scopeName",  label:"Scope Cat Name",    kind:"text",    width:"w-md", picklist:"scopeCategory",
+    placeholder:"only for Asset/Space Category" },
+  { key:"description",label:"Description",       kind:"text",    width:"w-lg" },
+  { key:"publish",    label:"Publish?",          kind:"select",  width:"w-sm",
+    options:[{v:"yes",l:"Yes"},{v:"no",l:"No"}] },
+  { key:"_recordId",  label:"Job Plan ID",       kind:"readonly",width:"w-sm" },
+  { key:"_actions",   label:"",                  kind:"actions", width:"w-actions" }
+];
+
+const JPV2_TASK_COLUMNS = [
+  { key:"_num",         label:"#",                  kind:"num",     width:"w-num",    sticky:true },
+  { key:"_status",      label:"Status",             kind:"status",  width:"w-status", sticky:true },
+  { key:"jobPlanName",  label:"Job Plan Name *",    kind:"text",    width:"w-md",
+    placeholder:"must match a row on Sheet 1" },
+  { key:"sectionName",  label:"Section Name",       kind:"text",    width:"w-md",
+    placeholder:"groups tasks; defaults to Section 1" },
+  { key:"taskName",     label:"Task Name *",        kind:"text",    width:"w-md" },
+  { key:"taskDesc",     label:"Task Description",   kind:"text",    width:"w-md" },
+  { key:"criticality",  label:"Criticality",        kind:"select",  width:"w-sm",
+    options:["","Statutory","Mandatory","Optimal","Discretionary"] },
+  { key:"skillSet",     label:"Skill Set",          kind:"text",    width:"w-sm", picklist:"skill" },
+  { key:"frequency",    label:"Frequency",          kind:"select",  width:"w-sm",
+    options:["","Daily","Weekly","Monthly","Quarterly","Half Yearly","Annually"] },
+  { key:"inputType",    label:"Input Type",         kind:"select",  width:"w-sm",
+    options:["","Text","Numeric","Option"] },
+  { key:"defaultValue", label:"Default Value",      kind:"text",    width:"w-sm" },
+  { key:"options",      label:"Options",            kind:"text",    width:"w-md",
+    placeholder:"comma-sep, Option type only" },
+  { key:"deviation",    label:"Deviation",          kind:"text",    width:"w-sm",
+    placeholder:"e.g. 10,90 (Numeric)" },
+  { key:"photoMandatory",label:"Photo?",            kind:"select",  width:"w-sm",
+    options:[{v:"",l:""},{v:"yes",l:"Yes"},{v:"no",l:"No"}] },
+  { key:"_actions",     label:"",                   kind:"actions", width:"w-actions" }
+];
+
+function blankJpv2PlanRow() {
+  return { jobPlanName:"", scope:"", scopeName:"", description:"", publish:"yes", _recordId:"" };
+}
+function blankJpv2TaskRow() {
+  return {
+    jobPlanName:"", sectionName:"", taskName:"", taskDesc:"",
+    criticality:"", skillSet:"", frequency:"",
+    inputType:"", defaultValue:"", options:"", deviation:"", photoMandatory:""
+  };
+}
+function blankJpv2RowFor(sheet) {
+  return sheet === "tasks" ? blankJpv2TaskRow() : blankJpv2PlanRow();
+}
+function jpv2ColumnsFor(sheet) {
+  return sheet === "tasks" ? JPV2_TASK_COLUMNS : JPV2_PLAN_COLUMNS;
+}
+
+function renderJpv2Queue() {
+  const sheet = state.activeJpv2;
+  const cols = jpv2ColumnsFor(sheet);
+  const head = $("#jpv2GridHead");
+  if (!head) return;
+  const table = head.closest("table");
+  const existingColgroup = table.querySelector(":scope > colgroup");
+  if (existingColgroup) existingColgroup.remove();
+  delete head.dataset.built;
+  buildGridHead(head, cols);
+
+  const queue = state.jpv2Queue[sheet];
+  const tbody = $("#jpv2Grid tbody");
+  tbody.innerHTML = queue.map((row, idx) =>
+    `<tr>` + cols.map(c => renderCell(c, row, idx)).join("") + `</tr>`
+  ).join("");
+  $("#jpv2RowCount").textContent = `${queue.length} row${queue.length === 1 ? "" : "s"}`;
+  $$("#jpv2SubTabs .freq-tab").forEach(b => b.classList.toggle("active", b.dataset.jpv2sub === sheet));
+}
+
+// Validate a plan row standalone (no cross-sheet checks here — done in import).
+async function validateJpv2PlanRow(row) {
+  const errors = [];
+  if (!row.jobPlanName) errors.push("Job Plan Name required");
+  if (!row.scope) errors.push("Scope required");
+  const sc = (row.scope || "").toLowerCase().trim();
+  row._jobPlanCategory = JP_SCOPE_TO_CATEGORY[sc] ?? null;
+  if (row.scope && !row._jobPlanCategory) errors.push(`Unsupported scope: ${row.scope}`);
+  if (sc === "asset category" || sc === "space category") {
+    if (!row.scopeName) errors.push("Scope Cat Name required for Asset/Space Category");
+    else {
+      const key = sc === "asset category" ? "assetCategory" : "spaceCategory";
+      row._scopeCatField = key;
+      try {
+        row._scopeCatId = await findInList(key, key, row.scopeName);
+        if (!row._scopeCatId) errors.push(`${row.scope} "${row.scopeName}" not found`);
+      } catch (e) { errors.push(`${row.scope} lookup failed: ${e.message}`); }
+    }
+  } else {
+    row._scopeCatField = null;
+    row._scopeCatId = null;
+  }
+  if (errors.length) { row.status = { kind:"error", text: errors.join("; ") }; return false; }
+  row.status = { kind:"valid", text: "Valid" };
+  return true;
+}
+
+// Validate a task row standalone. The Job Plan Name cross-reference to Sheet 1
+// is checked during import (after Sheet 1 is validated).
+async function validateJpv2TaskRow(row) {
+  const errors = [];
+  if (!row.jobPlanName) errors.push("Job Plan Name required");
+  if (!row.taskName) errors.push("Task Name required");
+
+  const itKey = (row.inputType || "").toLowerCase().trim();
+  row._inputType = JP_INPUT_TYPES[itKey] ?? 0;
+  if (itKey === "option" && !String(row.options || "").trim()) {
+    errors.push("Options required when Input Type = Option");
+  }
+  row._criticalityVal = JP_CRITICALITY[(row.criticality || "").toLowerCase().trim()] ?? 0;
+
+  row._skillId = null;
+  if (row.skillSet) {
+    try { row._skillId = await findInList("skill", "skill", row.skillSet); } catch (_) {}
+  }
+  if (errors.length) { row.status = { kind:"error", text: errors.join("; ") }; return false; }
+  row.status = { kind:"valid", text: "Valid" };
+  return true;
+}
+
+async function importJpv2Batch() {
+  const plans = state.jpv2Queue.plans;
+  const tasks = state.jpv2Queue.tasks;
+
+  // Pre-validate both sheets
+  for (const p of plans) {
+    if (p.status?.kind === "success") continue;
+    await validateJpv2PlanRow(p);
+  }
+  for (const t of tasks) {
+    if (t.status?.kind === "success") continue;
+    await validateJpv2TaskRow(t);
+  }
+  renderJpv2Queue();
+
+  const validPlans = plans.filter(p => p.status?.kind === "valid");
+  const validTasks = tasks.filter(t => t.status?.kind === "valid");
+  if (!validPlans.length) { showToast("No valid plans on Sheet 1 to import", "warn"); return; }
+
+  // Unique-name check on plans
+  const seen = new Map();
+  for (const p of validPlans) {
+    const key = p.jobPlanName.trim().toLowerCase();
+    if (seen.has(key)) {
+      p.status = { kind:"error", text: `Duplicate Job Plan Name on Sheet 1 (also row #${seen.get(key) + 1})` };
+    } else {
+      seen.set(key, plans.indexOf(p));
+    }
+  }
+  renderJpv2Queue();
+
+  // Match tasks to plans by name (case-insensitive)
+  const orphans = [];
+  const tasksByPlan = new Map();
+  for (const t of validTasks) {
+    const key = t.jobPlanName.trim().toLowerCase();
+    if (!seen.has(key)) {
+      orphans.push(t);
+      t.status = { kind:"error", text: `No matching Job Plan Name on Sheet 1` };
+      continue;
+    }
+    if (!tasksByPlan.has(key)) tasksByPlan.set(key, []);
+    tasksByPlan.get(key).push(t);
+  }
+  if (orphans.length) {
+    log(`${orphans.length} task row(s) have no matching plan on Sheet 1`, "warn");
+    renderJpv2Queue();
+  }
+
+  log(`Importing ${validPlans.length} job plan(s) with ${validTasks.length - orphans.length} task(s) from V2…`, "info");
+
+  for (const plan of validPlans) {
+    if (plan.status?.kind === "error") continue;
+    const key = plan.jobPlanName.trim().toLowerCase();
+    const planTasks = tasksByPlan.get(key) || [];
+
+    if (planTasks.length === 0) {
+      plan.status = { kind:"warn", text:"No tasks on Sheet 2 — empty job plans aren't useful. Add tasks and re-import." };
+      renderJpv2Queue();
+      continue;
+    }
+
+    // Promote plan-level metadata onto each task so the V1 builder works as-is.
+    const groupRows = planTasks.map(t => ({
+      ...t,
+      jobPlanName: plan.jobPlanName,
+      jobPlanDesc: plan.description || "",
+      scope: plan.scope,
+      scopeName: plan.scopeName,
+      publish: plan.publish,
+      _jobPlanCategory: plan._jobPlanCategory,
+      _scopeCatField: plan._scopeCatField,
+      _scopeCatId: plan._scopeCatId
+    }));
+
+    plan.status = { kind:"running", text:"Importing…" };
+    planTasks.forEach(t => t.status = { kind:"running", text:"Importing…" });
+    renderJpv2Queue();
+
+    const record = buildJpRecordFromGroup(groupRows);
+    const sectionList = buildSectionList(groupRows);
+    const totalTasks = sectionList.flatMap(s => s.tasks).length;
+    const totalSections = sectionList.length;
+    log(`"${plan.jobPlanName}" — ${totalSections} section(s), ${totalTasks} task(s)`, "info");
+
+    let createdId = null;
+    try {
+      const resp = await api("POST", "maintenance/api/v3/modules/jobplan",
+        { moduleName: "jobplan", data: record });
+      const root = resp?.data || {};
+      createdId = root.id || root.jobplan?.id
+        || (Array.isArray(root.jobplan) ? root.jobplan[0]?.id : null)
+        || (Array.isArray(root.list) ? root.list[0]?.id : null)
+        || resp?.id || null;
+    } catch (e) {
+      plan.status = { kind:"error", text: "Create failed: " + e.message };
+      planTasks.forEach(t => t.status = { kind:"error", text: "Plan create failed" });
+      renderJpv2Queue();
+      continue;
+    }
+
+    if (!createdId) {
+      plan.status = { kind:"error", text: "Created but no ID returned" };
+      planTasks.forEach(t => t.status = { kind:"error", text: "Plan create returned no ID" });
+      renderJpv2Queue();
+      continue;
+    }
+    plan._recordId = createdId;
+    renderJpv2Queue();
+
+    // Verify tasks landed
+    let tasksLanded = false;
+    try {
+      const v = await api("GET", `maintenance/api/v3/modules/jobplan/${createdId}`);
+      const saved = v?.data?.jobplan || v?.data || {};
+      const t = saved.tasks || saved.taskList || saved.task || [];
+      const s = saved.jobplansection || saved.sections || saved.sectionList
+        || saved.taskSections || saved.taskSectionList || [];
+      tasksLanded = (Array.isArray(t) && t.length > 0) || (Array.isArray(s) && s.length > 0);
+      log(`Job plan ${createdId} saved sections=${Array.isArray(s)?s.length:0}, tasks=${Array.isArray(t)?t.length:0}`, tasksLanded ? "ok" : "warn");
+    } catch (_) {}
+
+    if (!tasksLanded) {
+      log(`Tasks didn't attach to "${plan.jobPlanName}" — trying fallback endpoints…`, "warn");
+      tasksLanded = await attachSectionsFallback(createdId, sectionList, record);
+    }
+
+    const wantPublish = (plan.publish || "").toLowerCase() !== "no";
+    let published = false;
+    if (wantPublish) {
+      published = await publishJobPlan(createdId);
+    }
+
+    const base = `"${plan.jobPlanName}" — ${totalSections}s/${totalTasks}t (id ${createdId})`;
+    if (tasksLanded && (wantPublish ? published : true)) {
+      plan.status = { kind:"success", text: wantPublish ? `Published ${base}` : `Draft ${base}` };
+      planTasks.forEach(t => t.status = { kind:"success", text:`Attached to ${plan.jobPlanName}` });
+    } else if (tasksLanded && wantPublish && !published) {
+      plan.status = { kind:"warn", text: `Tasks attached to ${base} but publish failed` };
+      planTasks.forEach(t => t.status = { kind:"success", text:`Attached to ${plan.jobPlanName}` });
+    } else {
+      plan.status = { kind:"warn", text: `Created ${base} but tasks didn't attach` };
+      planTasks.forEach(t => t.status = { kind:"warn", text:`Plan created but task may have been dropped` });
+    }
+    state.cache.jobplan = null;
+    renderJpv2Queue();
+  }
+}
+
 // ---------- Assets (with hierarchical Site → Building → Floor → Space validation) ----------
 //
 // Asset records attach to a "resource" — which can be a site, building, floor,
@@ -3220,6 +3577,13 @@ async function validateAssetRow(row, sub) {
     errors.push(e.message);
   }
 
+  // Resolve Lookup-type custom fields by name → {id}. Generic — works for any
+  // custom field on any account; relies entirely on Facilio's field metadata.
+  if (row.custom && Object.keys(row.custom).length) {
+    const customErrors = await resolveRowCustomFields("asset", row);
+    errors.push(...customErrors);
+  }
+
   if (errors.length) { row.status = { kind:"error", text: errors.join("; ") }; return false; }
   row.status = { kind:"valid", text:"Valid" };
   return true;
@@ -3242,7 +3606,10 @@ function buildAssetRecord(row, sub) {
   const deepestSpace = row._subspaceId || row._spaceId;
   if (deepestSpace)          out.space = { id: deepestSpace };
   if (row.custom) for (const [k, v] of Object.entries(row.custom)) {
-    if (v !== "" && v != null) out[k] = isNaN(+v) ? v : +v;
+    if (v === "" || v == null) continue;
+    // Already resolved by validateAssetRow → {id: N} for lookups, primitive otherwise.
+    if (typeof v === "object" && v !== null) out[k] = v;
+    else out[k] = isNaN(+v) ? v : +v;
   }
   // Attach selected form id when present
   const formId = state.formsByModule.asset?.selectedFormId;
@@ -4017,6 +4384,14 @@ async function validatePortRow(row, kind) {
     }
   }
 
+  // Resolve any Lookup-type custom fields by name → {id} against their target
+  // module. Fixes "For input string: …" errors when a user pastes a name into
+  // a lookup column instead of a numeric ID.
+  if (row.custom && Object.keys(row.custom).length) {
+    const customErrors = await resolveRowCustomFields(kind, row);
+    errors.push(...customErrors);
+  }
+
   if (errors.length) { row.status = { kind:"error", text: errors.join("; ") }; return false; }
   row.status = { kind:"valid", text:"Valid" };
   return true;
@@ -4050,9 +4425,12 @@ function buildPortRecord(row, kind) {
     if (row._parentSpaceId)  out.parentSpace = { id: row._parentSpaceId };
     if (row._spaceCategoryId) out.spaceCategory = { id: row._spaceCategoryId };
   }
-  // Custom fields filled via the form-loaded extra columns
+  // Custom fields — already resolved by validatePortRow. Lookup values come
+  // through as {id: N} objects; primitives stay as numbers/strings.
   if (row.custom) for (const [k, v] of Object.entries(row.custom)) {
-    if (v !== "" && v != null) out[k] = isNaN(+v) ? v : +v;
+    if (v === "" || v == null) continue;
+    if (typeof v === "object" && v !== null) { out[k] = v; continue; }
+    out[k] = isNaN(+v) ? v : +v;
   }
   return out;
 }
@@ -5563,6 +5941,7 @@ function switchTab(name) {
   $("#tabAdd").classList.toggle("hidden", name !== "ppm" || ppmSub !== "add");
   $("#tabUpdate").classList.toggle("hidden", name !== "ppm" || ppmSub !== "update");
   $("#tabJobplan")?.classList.toggle("hidden", name !== "ppm" || ppmSub !== "jobplan");
+  $("#tabJobplanV2")?.classList.toggle("hidden", name !== "ppm" || ppmSub !== "jobplanv2");
 
   // When Inventory is active, show selected inventory sub-tab and run discovery once.
   if (name === "inventory") {
@@ -5579,7 +5958,9 @@ function switchPpmSub(sub) {
   $("#tabAdd").classList.toggle("hidden", sub !== "add");
   $("#tabUpdate").classList.toggle("hidden", sub !== "update");
   $("#tabJobplan")?.classList.toggle("hidden", sub !== "jobplan");
+  $("#tabJobplanV2")?.classList.toggle("hidden", sub !== "jobplanv2");
   if (sub === "jobplan") renderJpQueue();
+  if (sub === "jobplanv2") renderJpv2Queue();
 }
 
 // (Old form-visibility sync helpers removed — the grid handles all input now.)
@@ -5738,6 +6119,86 @@ function extractFieldsFromResponse(resp) {
     return a.displayName.localeCompare(b.displayName);
   });
   return out;
+}
+
+// ---------- Custom-field lookup resolution ----------
+//
+// When a user fills a Lookup-type custom field with a NAME (e.g. "Ryl Melbourne
+// Level 6" in the location_section_floor column), Facilio's bulkCreate rejects
+// it because the API expects {id: <number>}. This module fetches the field's
+// metadata, discovers the lookup target module, looks up the name, and
+// rewrites the value to {id} before the payload goes out.
+//
+// Cached per module — first call hits Facilio's /setup/modules/{m}/fields,
+// subsequent calls reuse the result for the session.
+async function getModuleFieldMetadata(moduleName) {
+  state.cache._fields = state.cache._fields || {};
+  if (state.cache._fields[moduleName]) return state.cache._fields[moduleName];
+  try {
+    const { fields } = await inspectModuleFields(moduleName);
+    state.cache._fields[moduleName] = fields || [];
+    return state.cache._fields[moduleName];
+  } catch (_) {
+    state.cache._fields[moduleName] = [];
+    return [];
+  }
+}
+
+// Resolve a single custom field's value:
+//   - numeric string → number (unchanged behavior)
+//   - if field is a Lookup, look up the name in the target module → {id}
+//   - anything else → passthrough
+// Returns the value to embed in the payload, OR throws when the lookup fails.
+async function resolveCustomFieldValue(moduleName, fieldKey, rawValue) {
+  const v = rawValue;
+  if (v === "" || v == null) return undefined;
+  // Pure number — assume it's already an ID (works for both lookup and number fields)
+  if (/^\d+$/.test(String(v).trim())) return Number(v);
+
+  // Look up the field's metadata to see if it's a Lookup
+  const meta = await getModuleFieldMetadata(moduleName);
+  const field = meta.find(f =>
+    f.name === fieldKey ||
+    f.name?.toLowerCase() === fieldKey.toLowerCase()
+  );
+  // If the field metadata says it's a lookup, resolve the name against the target module
+  if (field && field.isLookup && field.lookupModule) {
+    const targetModule = field.lookupModule;
+    let records;
+    try {
+      records = await loadFullRecords(targetModule);
+    } catch (e) {
+      throw new Error(`Couldn't list ${targetModule} to resolve "${v}": ${e.message}`);
+    }
+    const target = String(v).trim().toLowerCase();
+    const hit = records.find(r =>
+      (r.name || r.displayName || r.label || "").toLowerCase().trim() === target
+    );
+    if (!hit) {
+      throw new Error(`"${v}" not found in ${targetModule} module (custom field ${fieldKey})`);
+    }
+    return { id: hit.id };
+  }
+  // Not a lookup — return the raw string (Facilio will accept it for text fields,
+  // or reject it with a clearer error than before).
+  return isNaN(+v) ? v : +v;
+}
+
+// Resolve all custom fields on a row in place. Replaces row.custom[k] with the
+// payload-ready value (number, string, or {id} object). Returns array of errors.
+async function resolveRowCustomFields(moduleName, row) {
+  if (!row.custom) return [];
+  const errors = [];
+  for (const [k, v] of Object.entries(row.custom)) {
+    try {
+      const resolved = await resolveCustomFieldValue(moduleName, k, v);
+      if (resolved === undefined) continue;
+      row.custom[k] = resolved;
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return errors;
 }
 
 function renderModuleFields(moduleName, fields, endpoint) {
@@ -6693,6 +7154,173 @@ window.addEventListener("DOMContentLoaded", () => {
     showToast(`Imported ${added} row(s)`);
   });
 
+  // ==== Job Plans V2 sub-tab ====
+  if (state.jpv2Queue.plans.length === 0) state.jpv2Queue.plans.push(blankJpv2PlanRow());
+  if (state.jpv2Queue.tasks.length === 0) state.jpv2Queue.tasks.push(blankJpv2TaskRow());
+  bindGridInputs(
+    "#jpv2Grid",
+    () => state.jpv2Queue[state.activeJpv2],
+    () => jpv2ColumnsFor(state.activeJpv2),
+    () => blankJpv2RowFor(state.activeJpv2),
+    renderJpv2Queue
+  );
+  $$("#jpv2SubTabs .freq-tab").forEach(b => b.addEventListener("click", () => {
+    state.activeJpv2 = b.dataset.jpv2sub;
+    renderJpv2Queue();
+  }));
+  const addNewJpv2Row = () => {
+    state.jpv2Queue[state.activeJpv2].push(blankJpv2RowFor(state.activeJpv2));
+    renderJpv2Queue();
+  };
+  $("#btnJpv2NewRow").addEventListener("click", addNewJpv2Row);
+  $("#btnJpv2NewRow2").addEventListener("click", addNewJpv2Row);
+  $("#btnJpv2Validate").addEventListener("click", async () => {
+    for (const p of state.jpv2Queue.plans) {
+      p.status = { kind:"running", text:"Validating…" }; renderJpv2Queue();
+      await validateJpv2PlanRow(p);
+    }
+    for (const t of state.jpv2Queue.tasks) {
+      t.status = { kind:"running", text:"Validating…" }; renderJpv2Queue();
+      await validateJpv2TaskRow(t);
+    }
+    renderJpv2Queue();
+    showToast("Both sheets validated");
+  });
+  $("#btnJpv2Import").addEventListener("click", async () => {
+    try { await importJpv2Batch(); }
+    catch (e) { showToast("Import failed: " + e.message, "err"); }
+    showToast("Job Plan V2 import complete");
+  });
+  $("#btnJpv2RemoveDone").addEventListener("click", () => {
+    state.jpv2Queue.plans = state.jpv2Queue.plans.filter(r => r.status?.kind !== "success");
+    state.jpv2Queue.tasks = state.jpv2Queue.tasks.filter(r => r.status?.kind !== "success");
+    if (!state.jpv2Queue.plans.length) state.jpv2Queue.plans.push(blankJpv2PlanRow());
+    if (!state.jpv2Queue.tasks.length) state.jpv2Queue.tasks.push(blankJpv2TaskRow());
+    renderJpv2Queue();
+  });
+  $("#btnJpv2ClearAll").addEventListener("click", () => {
+    if (confirm(`Clear all V2 ${state.activeJpv2 === "tasks" ? "task" : "plan"} rows?`)) {
+      state.jpv2Queue[state.activeJpv2] = [blankJpv2RowFor(state.activeJpv2)];
+      renderJpv2Queue();
+    }
+  });
+  function jpv2ColLookup() {
+    const cols = jpv2ColumnsFor(state.activeJpv2).filter(c => c.kind === "text" || c.kind === "select");
+    const m = new Map();
+    cols.forEach(c => {
+      m.set(c.label.replace(/ \*$/, "").toLowerCase().trim(), c);
+      m.set(c.label.toLowerCase().trim(), c);
+      m.set(c.key.toLowerCase(), c);
+    });
+    const alias = (l, k) => { const c = cols.find(c => c.key === k); if (c) m.set(l, c); };
+    alias("name", state.activeJpv2 === "tasks" ? "taskName" : "jobPlanName");
+    alias("section", "sectionName");
+    alias("plan name", "jobPlanName");
+    alias("job plan", "jobPlanName");
+    alias("input", "inputType");
+    alias("type", "inputType");
+    alias("photo", "photoMandatory");
+    alias("skill", "skillSet");
+    return m;
+  }
+  function jpv2AddFromTabular(lines, delim) {
+    const colByLabel = jpv2ColLookup();
+    const headers = lines[0].split(delim).map(h => h.trim());
+    let added = 0;
+    for (let li = 1; li < lines.length; li++) {
+      const cells = lines[li].split(delim);
+      const row = blankJpv2RowFor(state.activeJpv2);
+      let hasContent = false;
+      headers.forEach((h, i) => {
+        const c = colByLabel.get(h.toLowerCase());
+        if (c && cells[i] != null) { row[c.key] = cells[i].trim(); if (cells[i].trim()) hasContent = true; }
+      });
+      if (hasContent) { state.jpv2Queue[state.activeJpv2].push(row); added++; }
+    }
+    return added;
+  }
+  $("#btnJpv2BulkParse").addEventListener("click", () => {
+    const text = $("#jpv2BulkPaste").value;
+    if (!text.trim()) return showToast("Paste box is empty", "warn");
+    const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim());
+    if (lines.length < 2) return showToast("Need a header row + data rows", "err");
+    const delim = lines[0].includes("\t") ? "\t" : ",";
+    const added = jpv2AddFromTabular(lines, delim);
+    renderJpv2Queue();
+    showToast(`Added ${added} row(s) to Sheet ${state.activeJpv2 === "tasks" ? "2 (Tasks)" : "1 (Plans)"}`);
+  });
+  $("#btnJpv2BulkClear").addEventListener("click", () => { $("#jpv2BulkPaste").value = ""; });
+  $("#btnJpv2Template").addEventListener("click", () => {
+    if (typeof XLSX === "undefined") return showToast("Excel library failed to load", "err");
+    const wb = XLSX.utils.book_new();
+    // Sheet 1 — Plans
+    const planCols = JPV2_PLAN_COLUMNS.filter(c => c.kind === "text" || c.kind === "select");
+    const planHeaders = planCols.map(c => c.label.replace(/ \*$/, ""));
+    const planBlanks = (o) => planHeaders.map(h => o[h.toLowerCase()] ?? "");
+    const plan1 = planBlanks({
+      "job plan name":"Quarterly Chiller","scope":"Asset Category","scope cat name":"Chiller",
+      "description":"Routine quarterly inspection","publish?":"yes"
+    });
+    const plan2 = planBlanks({
+      "job plan name":"Daily Lobby Check","scope":"Building",
+      "description":"Daily cleanliness check","publish?":"yes"
+    });
+    const wsPlans = XLSX.utils.aoa_to_sheet([planHeaders, plan1, plan2]);
+    wsPlans["!cols"] = planHeaders.map(h => ({ wch: Math.max(14, Math.min(28, h.length + 4)) }));
+    XLSX.utils.book_append_sheet(wb, wsPlans, "1-JobPlans");
+    // Sheet 2 — Tasks
+    const taskCols = JPV2_TASK_COLUMNS.filter(c => c.kind === "text" || c.kind === "select");
+    const taskHeaders = taskCols.map(c => c.label.replace(/ \*$/, ""));
+    const taskBlanks = (o) => taskHeaders.map(h => o[h.toLowerCase()] ?? "");
+    const t1 = taskBlanks({
+      "job plan name":"Quarterly Chiller","section name":"Water Heater",
+      "task name":"Check inlet temperature","criticality":"Mandatory",
+      "input type":"Numeric","deviation":"10,90","photo?":"yes"
+    });
+    const t2 = taskBlanks({
+      "job plan name":"Quarterly Chiller","section name":"Water Heater",
+      "task name":"Heater status","criticality":"Mandatory",
+      "input type":"Option","options":"OK, Needs Repair, Replace"
+    });
+    const t3 = taskBlanks({
+      "job plan name":"Quarterly Chiller","section name":"Compressor",
+      "task name":"Lubrication done","criticality":"Optimal",
+      "input type":"Option","options":"Yes, No","photo?":"no"
+    });
+    const t4 = taskBlanks({
+      "job plan name":"Daily Lobby Check","section name":"Cleanliness",
+      "task name":"Floor swept","input type":"Option","options":"Yes, No"
+    });
+    const wsTasks = XLSX.utils.aoa_to_sheet([taskHeaders, t1, t2, t3, t4]);
+    wsTasks["!cols"] = taskHeaders.map(h => ({ wch: Math.max(14, Math.min(28, h.length + 4)) }));
+    XLSX.utils.book_append_sheet(wb, wsTasks, "2-Tasks");
+    XLSX.writeFile(wb, "jobplan-v2-template.xlsx");
+    showToast("Saved jobplan-v2-template.xlsx");
+  });
+  $("#btnJpv2Upload").addEventListener("click", () => $("#jpv2ExcelInput").click());
+  $("#jpv2ExcelInput").addEventListener("change", async e => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file || typeof XLSX === "undefined") return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    let totalPlans = 0, totalTasks = 0;
+    for (const sheetName of wb.SheetNames) {
+      const ws = wb.Sheets[sheetName];
+      const tsv = XLSX.utils.sheet_to_csv(ws, { FS: "\t" });
+      const lines = tsv.replace(/\r/g, "").split("\n").filter(l => l.trim());
+      if (lines.length < 2) continue;
+      // Heuristic: sheet name or "Task" / "Plan" in name
+      const isTasks = /task/i.test(sheetName) || /^2/.test(sheetName);
+      const prevActive = state.activeJpv2;
+      state.activeJpv2 = isTasks ? "tasks" : "plans";
+      const added = jpv2AddFromTabular(lines, "\t");
+      if (isTasks) totalTasks += added; else totalPlans += added;
+      state.activeJpv2 = prevActive;
+    }
+    renderJpv2Queue();
+    showToast(`Imported ${totalPlans} plan(s) + ${totalTasks} task(s)`);
+  });
+
   // ==== Assets tab ====
   if (state.assetQueue.add.length === 0) state.assetQueue.add.push(blankAssetRow("add"));
   if (state.assetQueue.update.length === 0) state.assetQueue.update.push(blankAssetRow("update"));
@@ -7284,6 +7912,7 @@ window.addEventListener("DOMContentLoaded", () => {
     for (const k of Object.keys(state.invQueue)) state.invQueue[k] = [];
     for (const k of Object.keys(state.portQueue)) state.portQueue[k] = [];
     state.jpQueue = [];
+    state.jpv2Queue = { plans: [], tasks: [] };
     state.assetQueue = { add: [], update: [] };
     $("#cfgApiKey").value = "";
     $("#loginStatus").textContent = "Signed out — saved API key wiped.";
