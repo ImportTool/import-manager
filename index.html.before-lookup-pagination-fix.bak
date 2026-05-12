@@ -6,74 +6,43 @@
 <title>Import Manager — Facilio</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  /* FACILIO_THEME_APPLIED — light theme matching Facilio Intranet/Console */
   :root {
-    --bg: #f7f8fb;
-    --panel: #ffffff;
-    --panel2: #f9fafb;
-    --panel-hover: #f3f4f6;
-    --line: #e5e7eb;
-    --line-strong: #d1d5db;
-    --text: #1f2937;
-    --text-strong: #111827;
-    --muted: #6b7280;
-    --muted-soft: #9ca3af;
-    --accent: #2563eb;
-    --accent-hover: #1d4ed8;
-    --accent-soft: #eff6ff;
-    --accent2: #10b981;
-    --accent2-hover: #059669;
-    --warn: #f59e0b;
-    --warn-soft: #fef3c7;
-    --warn-text: #92400e;
-    --err: #ef4444;
-    --err-soft: #fee2e2;
-    --err-text: #b91c1c;
-    --ok: #10b981;
-    --ok-soft: #d1fae5;
-    --ok-text: #065f46;
-    --info-soft: #dbeafe;
-    --info-text: #1e40af;
-    --shadow-sm: 0 1px 2px rgba(15, 23, 42, .04);
-    --shadow-md: 0 4px 12px rgba(15, 23, 42, .06);
-    --shadow-lg: 0 12px 28px rgba(15, 23, 42, .08);
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel2: #1c2030;
+    --line: #2a2f3d;
+    --text: #e5e7eb;
+    --muted: #9aa3b2;
+    --accent: #5b8def;
+    --accent2: #4cc9a0;
+    --warn: #f7b955;
+    --err: #ef5e5e;
+    --ok: #4cc9a0;
   }
   *{ box-sizing: border-box; }
   html,body{ margin:0; padding:0; background:var(--bg); color:var(--text);
-    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  a{ color: var(--accent); text-decoration: none; }
-  a:hover{ text-decoration: underline; }
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  a{ color: var(--accent); }
   button{ font: inherit; cursor: pointer; }
   input, select, textarea {
     font: inherit; color: var(--text);
-    background: #ffffff; border:1px solid var(--line); border-radius:6px;
+    background:#0c0e14; border:1px solid var(--line); border-radius:6px;
     padding:7px 9px; outline: none; width:100%;
-    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  input::placeholder, textarea::placeholder{ color: var(--muted-soft); }
-  input:focus, select:focus, textarea:focus{
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
-  }
+  input:focus, select:focus, textarea:focus{ border-color: var(--accent); }
   textarea{ resize: vertical; min-height: 60px; }
   label.field{ display:block; margin-bottom: 10px; }
-  label.field > .lbl{ display:block; color:var(--muted); margin-bottom:4px; font-size:12px; font-weight: 500; }
-  label.field > .lbl .req{ color: var(--err); margin-left:2px; }
+  label.field > .lbl{ display:block; color:var(--muted); margin-bottom:4px; font-size:12px; }
+  label.field > .lbl .req{ color:#ef5e5e; margin-left:2px; }
   .btn{
     background:var(--accent); color:#fff; border:0; padding:9px 14px; border-radius:6px;
-    font-weight: 500; transition: background .15s ease, box-shadow .15s ease;
   }
-  .btn:hover{ background: var(--accent-hover); }
-  .btn:active{ transform: translateY(1px); }
-  .btn.secondary{ background: var(--panel-hover); color: var(--text-strong); border: 1px solid var(--line); }
-  .btn.secondary:hover{ background: var(--line); }
-  .btn.danger{ background: var(--err-soft); color: var(--err-text); border:1px solid #fecaca; }
-  .btn.danger:hover{ background: #fecaca; }
-  .btn.success{ background: var(--accent2); }
-  .btn.success:hover{ background: var(--accent2-hover); }
-  .btn.ghost{ background: #ffffff; color:var(--text); border:1px solid var(--line); }
-  .btn.ghost:hover{ background: var(--panel-hover); }
-  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn:hover{ filter: brightness(1.07); }
+  .btn.secondary{ background:#2a2f3d; color:var(--text); }
+  .btn.danger{ background:#3a1f2a; color:#ff8c8c; border:1px solid #5e2b35;}
+  .btn.success{ background:var(--accent2); }
+  .btn.ghost{ background: transparent; color:var(--text); border:1px solid var(--line); }
+  .btn:disabled{ opacity:.55; cursor:not-allowed; }
   .row{ display:flex; gap:12px; flex-wrap:wrap; }
   .row > *{ flex:1 1 220px; min-width: 180px; }
   .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
@@ -84,46 +53,43 @@
   /* App layout */
   .topbar{
     display:flex; align-items:center; justify-content:space-between;
-    padding:12px 22px; border-bottom:1px solid var(--line);
-    background: #ffffff;
+    padding:12px 18px; border-bottom:1px solid var(--line);
+    background: linear-gradient(180deg, #131623 0%, #11141d 100%);
   }
-  .brand{ display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:.2px; color: var(--text-strong); font-size: 15px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:.2px; }
   .brand .logo{
     width:28px; height:28px; border-radius:6px;
-    background: conic-gradient(from 200deg, var(--accent), var(--accent2), var(--accent));
+    background: conic-gradient(from 200deg, #5b8def, #4cc9a0, #5b8def);
   }
   .conn-pill{
     display:inline-flex; align-items:center; gap:8px; padding:5px 10px;
-    background: var(--ok-soft); border:1px solid #bbf7d0; border-radius:99px; font-size:12px; color: var(--ok-text); font-weight: 500;
+    background:#0c0e14; border:1px solid var(--line); border-radius:99px; font-size:12px; color:var(--muted);
   }
   .conn-pill .dot{ width:8px; height:8px; border-radius:50%; background: var(--ok); }
-  .conn-pill.bad{ background: var(--err-soft); border-color: #fecaca; color: var(--err-text); }
   .conn-pill.bad .dot{ background: var(--err); }
   .topbar-actions{ display:flex; gap:8px; align-items:center; }
 
   .tabs{
-    display:flex; gap:0; padding: 0 22px; border-bottom:1px solid var(--line);
-    background: #ffffff;
+    display:flex; gap:0; padding: 0 18px; border-bottom:1px solid var(--line);
+    background:#11141d;
   }
   .tab{
     background: transparent; color: var(--muted); border:0;
-    padding: 13px 16px; border-bottom: 2px solid transparent; font-weight: 500; font-size: 13.5px;
-    transition: color .15s ease, border-color .15s ease;
+    padding: 12px 16px; border-bottom: 2px solid transparent;
   }
-  .tab:hover{ color: var(--text-strong); }
-  .tab.active{ color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.active{ color: var(--text); border-bottom-color: var(--accent); }
   .subtab{
     background: transparent; color: var(--muted); border: 0;
-    padding: 10px 14px; border-bottom: 2px solid transparent; cursor: pointer; font: inherit; font-weight: 500;
+    padding: 10px 14px; border-bottom: 2px solid transparent; cursor: pointer; font: inherit;
   }
-  .subtab.active{ color: var(--accent); border-bottom-color: var(--accent); }
-  .subtab:hover{ color: var(--text-strong); }
+  .subtab.active{ color: var(--text); border-bottom-color: var(--accent2); }
+  .subtab:hover{ color: var(--text); }
 
   .panel{
     background: var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding: 16px; margin: 14px; box-shadow: var(--shadow-sm);
+    padding: 16px; margin: 14px;
   }
-  .panel h2, .panel h3{ margin: 0 0 10px; color: var(--text-strong); font-weight: 600; }
+  .panel h2, .panel h3{ margin: 0 0 10px; }
   .muted{ color: var(--muted); }
   .small{ font-size:12px; }
 
@@ -132,14 +98,13 @@
   /* Login */
   .login-wrap{
     min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
-    background: var(--bg);
   }
   .login-card{
     width:min(560px, 100%); background:var(--panel); border:1px solid var(--line);
-    border-radius:14px; padding:28px;
-    box-shadow: var(--shadow-lg);
+    border-radius:14px; padding:26px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.4);
   }
-  .login-card h1{ margin:0 0 6px; font-size:22px; color: var(--text-strong); font-weight: 600; }
+  .login-card h1{ margin:0 0 6px; font-size:22px;}
   .login-card .sub{ color: var(--muted); margin: 0 0 18px; }
 
   /* Queue table */
@@ -151,49 +116,48 @@
     text-align:left; vertical-align: top; white-space: nowrap;
     max-width: 200px; overflow: hidden; text-overflow: ellipsis;
   }
-  .queue-table th{ color: var(--muted); font-weight: 600; background: var(--panel2); position: sticky; top: 0;}
-  .queue-table tr:hover{ background: var(--panel-hover); }
+  .queue-table th{ color: var(--muted); font-weight: 600; background:#0e111a; position: sticky; top: 0;}
+  .queue-table tr:hover{ background:#1a1e2c; }
   .table-scroll{
     overflow:auto; max-height: 360px; border:1px solid var(--line); border-radius:8px;
   }
   .status-badge{
-    display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight: 500;
+    display:inline-block; padding:2px 6px; border-radius:4px; font-size:11px;
   }
-  .s-pending{ background: var(--panel-hover); color: var(--muted); }
-  .s-valid{   background: var(--ok-soft); color: var(--ok-text); }
-  .s-error{   background: var(--err-soft); color: var(--err-text); }
-  .s-running{ background: var(--info-soft); color: var(--info-text); }
-  .s-success{ background: var(--ok-soft); color: var(--ok-text); }
-  .s-warn{    background: var(--warn-soft); color: var(--warn-text); }
+  .s-pending{ background:#2a2f3d; color: var(--muted); }
+  .s-valid{   background:#1a3a2c; color:#7be0a8; }
+  .s-error{   background:#3a1f25; color:#ff8c8c; }
+  .s-running{ background:#23304a; color:#9bbcff; }
+  .s-success{ background:#103126; color:#4cc9a0; }
+  .s-warn{    background:#3a2f1a; color:#f7b955; }
   .row-actions button{ font-size:11px; padding:3px 6px; }
 
   /* Logs */
   .logs{
     margin: 14px; height: 220px; overflow:auto;
-    background: #f9fafb; border:1px solid var(--line); border-radius:10px; padding:12px;
+    background:#0a0c12; border:1px solid var(--line); border-radius:10px; padding:10px;
     font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    color: #475569;
+    color: #c5cad7;
   }
-  .logs .l-info  { color: #2563eb; }
-  .logs .l-ok    { color: #15803d; }
-  .logs .l-err   { color: #dc2626; }
-  .logs .l-warn  { color: #c2410c; }
-  .logs .l-dim   { color: #94a3b8; }
+  .logs .l-info  { color:#9bbcff; }
+  .logs .l-ok    { color:#7be0a8; }
+  .logs .l-err   { color:#ff8c8c; }
+  .logs .l-warn  { color:#f7b955; }
+  .logs .l-dim   { color:#6a7282; }
 
   /* Tooltips inline help */
   details.help{ margin: 6px 0 12px; }
-  details.help summary{ cursor:pointer; color: var(--muted); font-size: 12px; font-weight: 500; }
-  details.help summary:hover{ color: var(--text-strong); }
+  details.help summary{ cursor:pointer; color: var(--muted); font-size: 12px; }
   details.help .help-body{
-    margin-top:6px; padding:12px; background: var(--panel2); border:1px solid var(--line); border-radius:8px;
-    color: var(--text); font-size:12px;
+    margin-top:6px; padding:10px; background:#0c0e14; border:1px dashed var(--line); border-radius:8px;
+    color: var(--muted); font-size:12px;
   }
 
   .pill-row{ display:flex; gap:6px; flex-wrap:wrap; }
   .pill{
     display:inline-flex; align-items:center; gap:6px;
-    background: var(--panel2); border:1px solid var(--line); padding:3px 10px;
-    border-radius:99px; font-size:11px; color: var(--text);
+    background:#0c0e14; border:1px solid var(--line); padding:3px 8px;
+    border-radius:99px; font-size:11px;
   }
   .hidden{ display:none !important; }
 
@@ -201,7 +165,6 @@
   .grid-scroll{
     overflow:auto; max-height: calc(100vh - 360px); min-height: 320px;
     border-top:1px solid var(--line); border-bottom:1px solid var(--line);
-    background: var(--panel);
   }
   table.grid{
     border-collapse: separate; border-spacing: 0;
@@ -215,51 +178,47 @@
     background: var(--panel);
   }
   table.grid thead th{
-    background: var(--panel2); color: var(--muted);
+    background: #0e111a; color: var(--muted);
     font-weight: 600;
-    padding: 9px 10px;
+    padding: 8px 8px;
     position: sticky; top: 0; z-index: 5;
     text-align: left; white-space: nowrap;
-    font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em;
   }
   table.grid th.sticky-left, table.grid td.sticky-left{
     position: sticky; left: 0; z-index: 4;
-    background: var(--panel2);
+    background: #11141d;
     border-right: 2px solid var(--line);
   }
-  table.grid thead th.sticky-left{ z-index: 6; }
+  table.grid thead th.sticky-left{ z-index: 6; background: #0e111a;}
   table.grid td input, table.grid td select{
     width: 100%; border: 0; border-radius: 0;
-    background: transparent; padding: 7px 9px;
+    background: transparent; padding: 6px 8px;
     color: var(--text);
-    box-shadow: none;
   }
   table.grid td input:focus, table.grid td select:focus{
     outline: 2px solid var(--accent); outline-offset: -2px;
-    background: #ffffff;
-    box-shadow: none;
+    background: #0c0e14;
   }
-  table.grid tr:hover td{ background: var(--panel2); }
-  table.grid tr:hover td.sticky-left{ background: var(--panel-hover); }
+  table.grid tr:hover td{ background: #161a26; }
   table.grid td.cell-row-num{
-    color: var(--muted-soft); padding: 7px 10px; text-align: right;
-    font-variant-numeric: tabular-nums; font-size: 11.5px;
+    color: var(--muted); padding: 6px 10px; text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   table.grid td.cell-actions{
     padding: 4px 6px; white-space: nowrap;
   }
   table.grid td.cell-actions button{
-    font-size:11px; padding:3px 7px; margin-right:3px;
+    font-size:11px; padding:3px 6px; margin-right:3px;
   }
   table.grid td.cell-status{
-    padding: 5px 8px; font-size: 11px;
+    padding: 5px 6px; font-size: 11px;
   }
   table.grid td.cell-readonly{
-    color: var(--muted); padding: 7px 9px;
+    color: var(--muted); padding: 6px 8px;
     font-variant-numeric: tabular-nums;
   }
-  /* Column widths */
-  table.grid col.w-num{ width: 42px; }
+  /* Column widths — tuned for typical content */
+  table.grid col.w-num{ width: 38px; }
   table.grid col.w-status{ width: 200px; }
   table.grid col.w-actions{ width: 110px; }
   table.grid col.w-sm{ width: 100px; }
@@ -269,53 +228,45 @@
   /* Frequency sub-tabs */
   .freq-tab{
     background:transparent; border:0; color: var(--muted);
-    padding: 9px 16px; border-bottom: 2px solid transparent; cursor: pointer;
-    font: inherit; font-weight: 500;
-    transition: color .15s ease, border-color .15s ease;
+    padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
+    font: inherit;
   }
-  .freq-tab.active{ color: var(--accent); border-bottom-color: var(--accent); }
-  .freq-tab:hover{ color: var(--text-strong); }
+  .freq-tab.active{ color: var(--text); border-bottom-color: var(--accent2); }
+  .freq-tab:hover{ color: var(--text); }
 
   /* Expandable asset sub-grid */
   tr.asset-row td{
-    background: var(--panel2); padding: 12px;
+    background: #0c0e14; padding: 12px;
   }
   table.subgrid{
     width: 100%; border-collapse: collapse;
-    background: var(--panel); border:1px solid var(--line); border-radius: 8px;
+    background: #11141d; border:1px solid var(--line); border-radius: 8px;
     overflow: hidden;
   }
   table.subgrid th, table.subgrid td{
     padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12.5px;
   }
-  table.subgrid th{ color: var(--muted); background: var(--panel2); text-align: left; font-weight: 600; }
+  table.subgrid th{ color: var(--muted); background: #0e111a; text-align: left; font-weight: 600; }
   table.subgrid input{
     width: 100%; border: 0; background: transparent; padding: 4px 6px; color: var(--text);
   }
-  table.subgrid input:focus{ background:#ffffff; outline:2px solid var(--accent); outline-offset:-2px; }
+  table.subgrid input:focus{ background:#0c0e14; outline:2px solid var(--accent); outline-offset:-2px; }
   .config-cell{ display:flex; align-items:center; gap:6px; padding: 0 8px; }
   .config-cell .count{
-    background: var(--panel2); border: 1px solid var(--line); padding: 2px 8px;
+    background: #1a1e2c; border: 1px solid var(--line); padding: 2px 6px;
     border-radius: 99px; font-size: 11px; color: var(--muted);
   }
 
   /* Toast */
   .toast{
-    position: fixed; right: 22px; bottom: 22px; max-width: 360px;
-    background: #ffffff; color: var(--text); border:1px solid var(--line); border-left:4px solid var(--accent2);
-    border-radius:10px; padding:12px 14px; box-shadow: var(--shadow-lg);
+    position: fixed; right: 18px; bottom: 18px; max-width: 360px;
+    background: #1a1e2c; color: var(--text); border:1px solid var(--line); border-left:4px solid var(--accent2);
+    border-radius:10px; padding:10px 12px; box-shadow: 0 12px 30px rgba(0,0,0,.4);
     transform: translateY(20px); opacity:0; pointer-events:none; transition: all .2s ease;
-    font-size: 13px;
   }
   .toast.show{ transform:none; opacity:1; pointer-events:auto; }
   .toast.err{ border-left-color: var(--err); }
   .toast.warn{ border-left-color: var(--warn); }
-
-  /* Connection text/area in topbar — keep monospace base URLs readable */
-  .topbar #connText{ font-weight: 500; }
-
-  /* Headings above sections in the body */
-  h3{ font-size: 14px; font-weight: 600; color: var(--text-strong); }
 </style>
 </head>
 <body>
@@ -1252,13 +1203,8 @@ async function picklistIdByName(endpoint, name) {
 // to /modules/{endpoint}/view/all (works on every region we've seen). The
 // fallback is necessary because some endpoints — notably storeRoom on US —
 // don't have a picklist URL but DO have a view/all URL.
-async function loadFullPicklist(key, endpoint, query=null) {
-  // PAGINATE_ALL_FIX_APPLIED — walks every page until exhausted, then caches
-  // the full list for the session. Replaces previous single-page-only logic
-  // that missed records on accounts with more than the page size.
+async function loadFullPicklist(key, endpoint, query="?page=1&perPage=200&viewName=hidden-all") {
   if (state.cache[key] && state.cache[key].length) return state.cache[key];
-
-  const PAGE_SIZE = 500;
 
   const normalize = data => {
     let arr = [];
@@ -1275,39 +1221,22 @@ async function loadFullPicklist(key, endpoint, query=null) {
     })).filter(it => it.id != null && it.name);
   };
 
-  // Try /picklist/{endpoint} first, paginating all pages.
-  let all = [];
+  // Try picklist first.
   try {
-    for (let page = 1; page <= 200; page++) {
-      const url = `maintenance/api/v3/picklist/${endpoint}?page=${page}&perPage=${PAGE_SIZE}&viewName=hidden-all`;
-      const data = await api("GET", url);
-      const items = normalize(data);
-      if (!items.length) break;
-      all.push(...items);
-      if (items.length < PAGE_SIZE) break;
-    }
-    if (all.length) {
-      state.cache[key] = all;
-      log(`Loaded ${all.length} ${endpoint} via picklist (paginated).`, "dim");
-      return all;
-    }
-  } catch (e) { /* fall through to view/all */ }
+    const data = await api("GET", `maintenance/api/v3/picklist/${endpoint}${query}`);
+    const items = normalize(data);
+    if (items.length) { state.cache[key] = items; return items; }
+  } catch (e) { /* fall through */ }
 
-  // Fallback: /modules/{endpoint}/view/all, also paginated.
-  all = [];
+  // Fallback: module view/all.
   try {
-    for (let page = 1; page <= 200; page++) {
-      const url = `maintenance/api/v3/modules/${endpoint}/view/all?moduleName=${endpoint}&viewName=all&page=${page}&perPage=${PAGE_SIZE}`;
-      const data = await api("GET", url);
-      const items = normalize(data);
-      if (!items.length) break;
-      all.push(...items);
-      if (items.length < PAGE_SIZE) break;
-    }
-    if (all.length) {
-      state.cache[key] = all;
-      log(`Loaded ${all.length} ${endpoint} via view/all (paginated, picklist unavailable).`, "dim");
-      return all;
+    const data = await api("GET",
+      `maintenance/api/v3/modules/${endpoint}/view/all?moduleName=${endpoint}&viewName=all&page=1&perPage=500`);
+    const items = normalize(data);
+    if (items.length) {
+      state.cache[key] = items;
+      log(`Loaded ${items.length} ${endpoint} via view/all (picklist endpoint unavailable).`, "dim");
+      return items;
     }
   } catch (e) { /* fall through */ }
 
@@ -4490,64 +4419,11 @@ function renderPortQueue() {
 // Picklist loaders for portfolio parents. Reuses loadFullPicklist (which now
 // falls back to /modules/{x}/view/all when /picklist/{x} is unavailable).
 async function portFindIdByName(picklistKey, name) {
-  // PICKLIST_FILTER_FIX_APPLIED — for accounts with > 25k records of a
-  // given kind, a full pagination download is both slow and misses recent
-  // records that fall past the page-count cap. Strategy:
-  //   1. If input is numeric, use as ID directly.
-  //   2. Check existing in-memory cache (free hit).
-  //   3. Ask Facilio's picklist endpoint for THIS specific name. Tries
-  //      operatorId 3 (AU/AE), 36, and 9 since Facilio's name-filter
-  //      operator varies by region.
-  //   4. Fall back to the full paginated cache as a last resort.
   if (!name) return null;
-  const trimmed = String(name).trim();
-  if (/^\d+$/.test(trimmed)) return Number(trimmed);
-
-  // 2. Cached?
-  try {
-    if (state.cache[picklistKey] && state.cache[picklistKey].length) {
-      const target = trimmed.toLowerCase();
-      const hit = state.cache[picklistKey].find(it => (it.name || "").toLowerCase().trim() === target);
-      if (hit) return hit.id;
-    }
-  } catch (_) {}
-
-  // 3. Server-side filtered picklist.
-  for (const operatorId of [3, 36, 9]) {
-    const filt = encodeURIComponent(JSON.stringify({
-      name: { operatorId, value: [trimmed] }
-    }));
-    try {
-      const r = await api("GET",
-        `maintenance/api/v3/picklist/${picklistKey}?page=1&perPage=20&viewName=hidden-all&filters=${filt}`);
-      const root = r?.data || {};
-      let arr = root.pickList || root[picklistKey] || root.list || [];
-      if (!Array.isArray(arr)) {
-        for (const k of Object.keys(root)) if (Array.isArray(root[k])) { arr = root[k]; break; }
-      }
-      // Normalise (picklist responses use {value,label}, view/all uses {id,name}).
-      const normalised = (arr || []).map(it => ({
-        id: it.value ?? it.id,
-        name: ((it.label ?? it.name ?? "") + "").trim()
-      })).filter(x => x.id != null && x.name);
-      const target = trimmed.toLowerCase();
-      const matches = normalised.filter(it => it.name.toLowerCase() === target);
-      if (matches.length === 1) return matches[0].id;
-      if (matches.length > 1) {
-        const ids = matches.slice(0, 6).map(m => m.id).join(", ");
-        log(`Multiple ${picklistKey} named "${name}" (IDs: ${ids}). Using the first.`, "warn");
-        return matches[0].id;
-      }
-      // If the endpoint accepted the filter but returned 0 rows, no point
-      // trying another operatorId — the record genuinely doesn't exist.
-      if (Array.isArray(arr) && arr.length === 0) break;
-    } catch (_) { /* try next operatorId */ }
-  }
-
-  // 4. Fallback — full paginated cache.
+  if (/^\d+$/.test(String(name).trim())) return Number(String(name).trim());
   try {
     const items = await loadFullPicklist(picklistKey, picklistKey);
-    const target = trimmed.toLowerCase();
+    const target = name.trim().toLowerCase();
     const hit = items.find(it => (it.name || "").toLowerCase().trim() === target);
     return hit ? hit.id : null;
   } catch { return null; }
