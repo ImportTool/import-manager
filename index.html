@@ -1050,6 +1050,7 @@
           <button class="btn ghost" id="btnInspTemplate">Template</button>
           <button class="btn ghost" id="btnInspUpload">Upload</button>
           <input type="file" id="inspExcelInput" accept=".xlsx,.xls,.csv" style="display:none" />
+          <button class="btn ghost" id="btnInspExport" title="Fetch all Inspection Templates from your Facilio account and download as Excel">Export</button>
           <button class="btn" id="btnInspNewRow">+ New row</button>
           <button class="btn secondary" id="btnInspValidate">Validate all</button>
           <button class="btn success" id="btnInspImport">Import all</button>
@@ -8753,6 +8754,102 @@ const INSP_HEADER_ALIASES = {
   "assigned to": "assignedTo", "assignee": "assignedTo"
 };
 
+// Fetches every Inspection Template from Facilio (paginated) and saves an
+// .xlsx with the key fields so the user can grab Template IDs without
+// drilling into each one in the UI.
+async function exportInspectionTemplates() {
+  if (typeof XLSX === "undefined") { showToast("Excel library failed to load", "err"); return; }
+  const btn = document.getElementById("btnInspExport");
+  if (btn) { btn.disabled = true; btn.textContent = "Exporting…"; }
+  log("Starting Inspection Templates export…", "info");
+
+  const all = [];
+  const PAGE_SIZE = 200;
+  try {
+    for (let page = 1; page <= 200; page++) {
+      const r = await api("GET",
+        `maintenance/api/v3/modules/inspectionTemplate/view/all?moduleName=inspectionTemplate&viewName=all&page=${page}&perPage=${PAGE_SIZE}`);
+      const root = r?.data || {};
+      let items = root.inspectionTemplate || root.list || root.data || [];
+      if (!Array.isArray(items)) {
+        for (const k of Object.keys(root)) if (Array.isArray(root[k])) { items = root[k]; break; }
+      }
+      if (!Array.isArray(items) || !items.length) break;
+      all.push(...items);
+      log(`  page ${page}: ${items.length} record(s) (total ${all.length})`, "dim");
+      if (items.length < PAGE_SIZE) break;
+    }
+  } catch (e) {
+    log("Export failed: " + e.message, "err");
+    showToast("Export failed — see Logs", "err");
+    if (btn) { btn.disabled = false; btn.textContent = "Export"; }
+    return;
+  }
+
+  if (!all.length) {
+    showToast("No Inspection Templates found", "warn");
+    if (btn) { btn.disabled = false; btn.textContent = "Export"; }
+    return;
+  }
+
+  const TEMPLATE_TYPE_LABEL = { 1: "Checklist", 2: "Finding", 3: "Checklist + Finding" };
+  const CREATION_TYPE_LABEL = { 1: "Single", 2: "Multiple" };
+
+  const headers = [
+    "ID", "Name", "Description", "Type", "Scope",
+    "Site", "Site IDs", "Buildings", "Building IDs",
+    "Resource", "Resource ID", "Resource Type",
+    "Category", "Priority", "Assigned To",
+    "Asset Category", "Space Category",
+    "Form ID", "Triggers", "Created Time", "Modified Time"
+  ];
+  const fmtTime = ms => ms && ms > 0 ? new Date(Number(ms)).toLocaleString() : "";
+  const namesOf  = arr => (Array.isArray(arr) ? arr : []).map(x => x?.name || x?.label || x?.id).filter(Boolean).join(", ");
+  const idsOf    = arr => (Array.isArray(arr) ? arr : []).map(x => x?.id).filter(Boolean).join(", ");
+  const resourceTypeOf = r => {
+    if (!r) return "";
+    if (r.resourceTypeEnum) return r.resourceTypeEnum;
+    // resourceType numeric → name (Facilio convention: 1=SPACE, plus common others)
+    const map = { 1: "SPACE", 2: "ASSET", 3: "BUILDING", 4: "FLOOR", 5: "SITE" };
+    return map[r.resourceType] || (r.resourceType != null ? String(r.resourceType) : "");
+  };
+
+  const rows = all.map(t => [
+    t.id,
+    t.name || "",
+    t.description || "",
+    TEMPLATE_TYPE_LABEL[t.templateType] || (t.templateType != null ? String(t.templateType) : ""),
+    CREATION_TYPE_LABEL[t.creationType] || (t.creationType != null ? String(t.creationType) : ""),
+    namesOf(t.sites) || t.site?.name || "",
+    idsOf(t.sites)   || t.siteId || "",
+    namesOf(t.buildings),
+    idsOf(t.buildings),
+    t.resource?.name || t.resource?.primaryValue || "",
+    t.resource?.id || "",
+    resourceTypeOf(t.resource),
+    t.category?.name || "",
+    t.priority?.name || "",
+    t.assignedTo?.name || t.assignedTo?.email || "",
+    t.assetCategory?.name || "",
+    t.spaceCategory?.name || "",
+    t.formId || "",
+    Array.isArray(t.triggers) ? t.triggers.length : 0,
+    fmtTime(t.sysCreatedTime),
+    fmtTime(t.sysModifiedTime)
+  ]);
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Reasonable column widths
+  ws["!cols"] = headers.map(h => ({ wch: Math.max(12, Math.min(30, h.length + 4)) }));
+  XLSX.utils.book_append_sheet(wb, ws, "InspectionTemplates");
+  const fname = `inspection-templates-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  log(`Saved ${fname} with ${all.length} template(s)`, "ok");
+  showToast(`Exported ${all.length} templates → ${fname}`);
+  if (btn) { btn.disabled = false; btn.textContent = "Export"; }
+}
+
 function inspAddFromTabular(lines, delim) {
   const headers = lines[0].split(delim).map(h => h.trim());
   let added = 0;
@@ -8851,6 +8948,7 @@ function inspAddFromTabular(lines, delim) {
   document.getElementById("btnInspUpload")?.addEventListener("click", () => {
     document.getElementById("inspExcelInput").click();
   });
+  document.getElementById("btnInspExport")?.addEventListener("click", () => exportInspectionTemplates());
   document.getElementById("inspExcelInput")?.addEventListener("change", async e => {
     const file = e.target.files[0]; e.target.value = "";
     if (!file || typeof XLSX === "undefined") return;
