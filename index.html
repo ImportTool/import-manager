@@ -1492,6 +1492,118 @@ const WEEKDAY = { sun:1, mon:2, tue:3, wed:4, thu:5, fri:6, sat:7 };
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 
+// ---------- Delegated sub-tab click handlers ----------
+//
+// Attached at the very top of the script (before any code that might throw)
+// so sub-tab switching is guaranteed to work even if a later init step fails.
+// All function references are checked with typeof so missing ones can't crash.
+document.addEventListener("click", e => {
+  // PPM sub-tabs: Add PPM / Update PPM / Job Plans / Job Plans V2 / Routes
+  const ppmSub = e.target.closest(".subtab[data-subtab]");
+  if (ppmSub && typeof switchPpmSub === "function") {
+    switchPpmSub(ppmSub.dataset.subtab);
+    return;
+  }
+  // Asset sub-tabs: Add Assets / Update Assets
+  const assetSub = e.target.closest("#assetSubTabs .freq-tab[data-assetsub]");
+  if (assetSub) {
+    state.activeAsset = assetSub.dataset.assetsub;
+    document.querySelectorAll("#assetSubTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === assetSub));
+    if (typeof renderAssetQueue === "function") renderAssetQueue();
+    return;
+  }
+  // Inventory sub-tabs (Item Types / Items / Tool Types / Tools)
+  const invSub = e.target.closest("#invSubTabs .freq-tab[data-invsub]");
+  if (invSub) {
+    state.activeInv = invSub.dataset.invsub;
+    document.querySelectorAll("#invSubTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === invSub));
+    if (typeof renderInvQueue === "function") renderInvQueue();
+    return;
+  }
+  // Portfolio sub-tabs (Sites / Buildings / Floors / Spaces)
+  const portSub = e.target.closest("#portSubTabs .freq-tab[data-portsub]");
+  if (portSub) {
+    state.activePort = portSub.dataset.portsub;
+    document.querySelectorAll("#portSubTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === portSub));
+    if (typeof renderPortQueue === "function") renderPortQueue();
+    if (typeof initModuleForms === "function") initModuleForms(state.activePort);
+    if (typeof renderFormSelector === "function") renderFormSelector(state.activePort);
+    return;
+  }
+  // Portfolio mode (Add / Update)
+  const portMode = e.target.closest("#portModeTabs .freq-tab[data-portmode]");
+  if (portMode) {
+    state.activePortMode = portMode.dataset.portmode;
+    document.querySelectorAll("#portModeTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === portMode));
+    if (typeof renderPortQueue === "function") renderPortQueue();
+    return;
+  }
+  // Job Plans V2 sub-tabs (Plans / Tasks)
+  const jpv2Sub = e.target.closest("#jpv2SubTabs .freq-tab[data-jpv2sub]");
+  if (jpv2Sub) {
+    state.activeJpv2 = jpv2Sub.dataset.jpv2sub;
+    document.querySelectorAll("#jpv2SubTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === jpv2Sub));
+    if (typeof renderJpv2Queue === "function") renderJpv2Queue();
+    return;
+  }
+  // Routes inner tabs (Add Routes / Asset Associations)
+  const routeInner = e.target.closest("#routeInnerTabs .freq-tab[data-routeinner]");
+  if (routeInner) {
+    state.activeRouteInner = routeInner.dataset.routeinner;
+    document.querySelectorAll("#routeInnerTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === routeInner));
+    if (typeof renderRouteQueue === "function") renderRouteQueue();
+    return;
+  }
+  // PPM frequency tabs (Daily / Weekly / Monthly / Quarterly / Half Yearly / Annually)
+  const ppmFreq = e.target.closest("#freqTabs .freq-tab[data-freq]");
+  if (ppmFreq) {
+    state.activeFreq = ppmFreq.dataset.freq;
+    state.expandedAsset = null;
+    document.querySelectorAll("#freqTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === ppmFreq));
+    if (typeof renderAddQueue === "function") renderAddQueue();
+    return;
+  }
+  // Update-PPM frequency tabs
+  const updFreq = e.target.closest("#updFreqTabs .freq-tab[data-freq]");
+  if (updFreq) {
+    state.activeUpdFreq = updFreq.dataset.freq;
+    document.querySelectorAll("#updFreqTabs .freq-tab").forEach(b =>
+      b.classList.toggle("active", b === updFreq));
+    if (typeof renderUpdQueue === "function") renderUpdQueue();
+    return;
+  }
+  // Inspection sub-tabs (Templates / Triggers / Q&A / Scoring)
+  const inspSub = e.target.closest("#tabInspections .subtab[data-inspsub]");
+  if (inspSub) {
+    const which = inspSub.dataset.inspsub;
+    document.querySelectorAll("#tabInspections .subtab[data-inspsub]").forEach(b =>
+      b.classList.toggle("active", b === inspSub));
+    document.getElementById("inspSubTemplates")?.classList.toggle("hidden", which !== "templates");
+    document.getElementById("inspSubTriggers")?.classList.toggle("hidden", which !== "triggers");
+    document.getElementById("inspSubQanda")?.classList.toggle("hidden", which !== "qanda");
+    document.getElementById("inspSubScoring")?.classList.toggle("hidden", which !== "scoring");
+    try {
+      if (which === "templates" && typeof renderInspQueue === "function") {
+        if (state.inspQueue && !state.inspQueue.length && typeof blankInspRow === "function") {
+          state.inspQueue.push(blankInspRow());
+        }
+        renderInspQueue();
+      }
+      if (which === "triggers"  && typeof renderInspTrigQueue === "function") renderInspTrigQueue();
+      if (which === "qanda"     && typeof renderInspQaQueue === "function") renderInspQaQueue();
+      if (which === "scoring"   && typeof renderInspScoreQueue === "function") renderInspScoreQueue();
+    } catch (_) {}
+    return;
+  }
+});
+
 function showToast(msg, kind = "ok") {
   const t = $("#toast");
   t.textContent = msg;
@@ -6940,11 +7052,47 @@ function switchPpmSub(sub) {
   $("#tabJobplan")?.classList.toggle("hidden", sub !== "jobplan");
   $("#tabJobplanV2")?.classList.toggle("hidden", sub !== "jobplanv2");
   $("#tabRoutes")?.classList.toggle("hidden", sub !== "routes");
-  if (sub === "jobplan") renderJpQueue();
-  if (sub === "jobplanv2") renderJpv2Queue();
+  // Just-in-time seed + render each sub-section. Belt-and-braces in case
+  // the DOMContentLoaded init didn't fully run (e.g. a later step threw).
+  if (sub === "add" && typeof renderAddQueue === "function") {
+    try {
+      for (const f of (typeof FREQS !== "undefined" ? FREQS : [])) {
+        if (state.addQueue?.[f] && !state.addQueue[f].length && typeof blankAddRow === "function") {
+          state.addQueue[f].push(blankAddRow(f));
+        }
+      }
+      renderAddQueue();
+    } catch (_) {}
+  }
+  if (sub === "update" && typeof renderUpdQueue === "function") {
+    try {
+      for (const f of (typeof FREQS !== "undefined" ? FREQS : [])) {
+        if (state.updQueue?.[f] && !state.updQueue[f].length && typeof blankUpdRow === "function") {
+          state.updQueue[f].push(blankUpdRow(f));
+        }
+      }
+      renderUpdQueue();
+    } catch (_) {}
+  }
+  if (sub === "jobplan" && typeof renderJpQueue === "function") {
+    try {
+      if (state.jpQueue && !state.jpQueue.length && typeof blankJpRow === "function") {
+        state.jpQueue.push(blankJpRow());
+      }
+      renderJpQueue();
+    } catch (_) {}
+  }
+  if (sub === "jobplanv2" && typeof renderJpv2Queue === "function") {
+    try { renderJpv2Queue(); } catch (_) {}
+  }
   if (sub === "routes") {
-    try { autoDiscoverRouteForm(); } catch (_) {}
-    if (typeof renderRouteQueue === "function") renderRouteQueue();
+    try { if (typeof autoDiscoverRouteForm === "function") autoDiscoverRouteForm(); } catch (_) {}
+    try {
+      if (state.routeQueue && !state.routeQueue.length && typeof blankRouteRow === "function") {
+        state.routeQueue.push(blankRouteRow());
+      }
+      if (typeof renderRouteQueue === "function") renderRouteQueue();
+    } catch (_) {}
   }
 }
 
@@ -7681,96 +7829,6 @@ function renderLogsResults(view) {
 }
 
 // ---------- event wiring ----------
-//
-// Delegated tab-click handlers — attached on document.body so they keep
-// working even if the per-section init code further down throws an error
-// (which would otherwise stop later addEventListener calls from running).
-// This is the safety net that makes sub-tab switching reliable across PPM,
-// Assets, Inventory, Portfolio, Routes, Job Plans V2, Inspections, etc.
-document.addEventListener("click", e => {
-  // PPM sub-tabs: Add PPM / Update PPM / Job Plans / Job Plans V2 / Routes
-  const ppmSub = e.target.closest(".subtab[data-subtab]");
-  if (ppmSub && typeof switchPpmSub === "function") {
-    switchPpmSub(ppmSub.dataset.subtab);
-    return;
-  }
-  // Asset sub-tabs: Add Assets / Update Assets
-  const assetSub = e.target.closest("#assetSubTabs .freq-tab[data-assetsub]");
-  if (assetSub) {
-    state.activeAsset = assetSub.dataset.assetsub;
-    document.querySelectorAll("#assetSubTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === assetSub));
-    if (typeof renderAssetQueue === "function") renderAssetQueue();
-    return;
-  }
-  // Inventory sub-tabs (Item Types / Items / Tool Types / Tools)
-  const invSub = e.target.closest("#invSubTabs .freq-tab[data-invsub]");
-  if (invSub) {
-    state.activeInv = invSub.dataset.invsub;
-    document.querySelectorAll("#invSubTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === invSub));
-    if (typeof renderInvQueue === "function") renderInvQueue();
-    return;
-  }
-  // Portfolio sub-tabs (Sites / Buildings / Floors / Spaces)
-  const portSub = e.target.closest("#portSubTabs .freq-tab[data-portsub]");
-  if (portSub) {
-    state.activePort = portSub.dataset.portsub;
-    document.querySelectorAll("#portSubTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === portSub));
-    if (typeof renderPortQueue === "function") renderPortQueue();
-    if (typeof initModuleForms === "function") initModuleForms(state.activePort);
-    if (typeof renderFormSelector === "function") renderFormSelector(state.activePort);
-    return;
-  }
-  // Portfolio mode (Add / Update)
-  const portMode = e.target.closest("#portModeTabs .freq-tab[data-portmode]");
-  if (portMode) {
-    state.activePortMode = portMode.dataset.portmode;
-    document.querySelectorAll("#portModeTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === portMode));
-    if (typeof renderPortQueue === "function") renderPortQueue();
-    return;
-  }
-  // Job Plans V2 sub-tabs (Plans / Tasks)
-  const jpv2Sub = e.target.closest("#jpv2SubTabs .freq-tab[data-jpv2sub]");
-  if (jpv2Sub) {
-    state.activeJpv2 = jpv2Sub.dataset.jpv2sub;
-    document.querySelectorAll("#jpv2SubTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === jpv2Sub));
-    if (typeof renderJpv2Queue === "function") renderJpv2Queue();
-    return;
-  }
-  // Routes inner tabs (Add Routes / Asset Associations)
-  const routeInner = e.target.closest("#routeInnerTabs .freq-tab[data-routeinner]");
-  if (routeInner) {
-    state.activeRouteInner = routeInner.dataset.routeinner;
-    document.querySelectorAll("#routeInnerTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === routeInner));
-    if (typeof renderRouteQueue === "function") renderRouteQueue();
-    return;
-  }
-  // PPM frequency tabs (Daily / Weekly / Monthly / Quarterly / Half Yearly / Annually)
-  const ppmFreq = e.target.closest("#freqTabs .freq-tab[data-freq]");
-  if (ppmFreq) {
-    state.activeFreq = ppmFreq.dataset.freq;
-    state.expandedAsset = null;
-    document.querySelectorAll("#freqTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === ppmFreq));
-    if (typeof renderAddQueue === "function") renderAddQueue();
-    return;
-  }
-  // Update-PPM frequency tabs
-  const updFreq = e.target.closest("#updFreqTabs .freq-tab[data-freq]");
-  if (updFreq) {
-    state.activeUpdFreq = updFreq.dataset.freq;
-    document.querySelectorAll("#updFreqTabs .freq-tab").forEach(b =>
-      b.classList.toggle("active", b === updFreq));
-    if (typeof renderUpdQueue === "function") renderUpdQueue();
-    return;
-  }
-});
-
 window.addEventListener("DOMContentLoaded", () => {
   const stored = loadStoredConn();
   $("#btnTestConnect").addEventListener("click", doLogin);
