@@ -386,6 +386,7 @@
     <button class="tab" data-tab="inventory">Inventory</button>
     <button class="tab" data-tab="portfolio">Portfolio</button>
     <button class="tab" data-tab="inspections">Inspections</button>
+    <button class="tab" data-tab="users">Users</button>
     <button class="tab" data-tab="logs">Record History</button>
     <button class="tab" data-tab="settings">Settings</button>
   </div>
@@ -993,6 +994,106 @@
     </div>
   </div>
 
+  <!-- ===== Users Tab ===== -->
+  <div id="tabUsers" class="tab-panel hidden">
+    <div class="tabs">
+      <button class="subtab active" data-usersub="mainApp">Main App</button>
+      <button class="subtab" data-usersub="vendor">Vendor</button>
+      <button class="subtab" data-usersub="client">Client Portal</button>
+      <button class="subtab" data-usersub="occupant">Occupant Portal</button>
+      <button class="subtab" data-usersub="bulkInvite">Bulk Invite</button>
+    </div>
+
+    <div id="userSubMainApp">
+      <div class="panel" style="padding: 12px 14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin:0 0 4px;">Add Main App Users</h3>
+            <p class="muted small" style="margin:0;">Bulk-add staff users to the main Facilio app. The <b>Invite?</b> column controls whether each user receives an invitation email on creation — set to <b>No</b> to add silently, then send invitations later from the <b>Bulk Invite</b> sub-tab.</p>
+          </div>
+          <div class="card-actions" style="margin:0;">
+            <button class="btn ghost" id="btnUserTemplate" title="Download .xlsx template">Template</button>
+            <button class="btn ghost" id="btnUserUpload" title="Upload filled .xlsx / .csv">Upload</button>
+            <input type="file" id="userExcelInput" accept=".xlsx,.xls,.csv" style="display:none" />
+            <button class="btn" id="btnUserNewRow">+ New row</button>
+            <button class="btn secondary" id="btnUserValidate">Validate all</button>
+            <button class="btn success" id="btnUserImport">Add users</button>
+            <button class="btn ghost" id="btnUserClearAll">Clear all</button>
+          </div>
+        </div>
+
+        <details class="help" open style="margin-top:12px;">
+          <summary>Defaults</summary>
+          <div class="help-body">
+            <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+              <label class="field" style="flex:0 0 200px; margin:0;">
+                <span class="lbl">Main App ID *</span>
+                <input id="userDefMainAppId" placeholder="e.g. 4580" />
+              </label>
+              <label class="field" style="flex:0 0 160px; margin:0;">
+                <span class="lbl">Default language</span>
+                <input id="userDefLanguage" value="en" />
+              </label>
+              <button class="btn ghost" id="btnUserDefaultsSave">Save</button>
+              <span class="muted small" id="userDefaultsStatus"></span>
+            </div>
+            <p class="muted small" style="margin:8px 0 0;"><b>Main App ID</b> is the numeric <code>appId</code> for the main Facilio app on this org (visible in a captured POST under <code>appId</code>). Saved per browser.</p>
+          </div>
+        </details>
+
+        <div id="usersMainAppFormSelector" style="margin-top:6px; font-size:12px;"></div>
+      </div>
+
+      <div class="panel" style="padding: 0;">
+        <div class="grid-scroll">
+          <table class="grid" id="userGrid">
+            <thead><tr id="userGridHead"></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div style="padding: 10px 14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+          <span class="muted small" id="userRowCount">0 rows</span>
+          <button class="btn ghost" id="btnUserNewRow2">+ Add row</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="userSubVendor" class="hidden">
+      <div class="panel" style="padding: 12px 14px;">
+        <p class="muted small" style="margin:0;">Vendor portal user provisioning — coming soon once we have the captured API payload.</p>
+      </div>
+    </div>
+
+    <div id="userSubClient" class="hidden">
+      <div class="panel" style="padding: 12px 14px;">
+        <p class="muted small" style="margin:0;">Client portal user provisioning — coming soon once we have the captured API payload.</p>
+      </div>
+    </div>
+
+    <div id="userSubOccupant" class="hidden">
+      <div class="panel" style="padding: 12px 14px;">
+        <p class="muted small" style="margin:0;">Occupant portal user provisioning — coming soon once we have the captured API payload.</p>
+      </div>
+    </div>
+
+    <div id="userSubBulkInvite" class="hidden">
+      <div class="panel" style="padding: 12px 14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin:0 0 4px;">Bulk Invite</h3>
+            <p class="muted small" style="margin:0;">Paste a list of emails (one per line) and send invitations to all of them in one shot. Useful for inviting users you previously added with <b>Invite? = No</b>.</p>
+          </div>
+          <div class="card-actions" style="margin:0;">
+            <button class="btn success" id="btnUserBulkInviteSend">Send invitations</button>
+            <button class="btn ghost" id="btnUserBulkInviteClear">Clear</button>
+          </div>
+        </div>
+        <textarea id="userBulkInviteEmails" placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com" style="width:100%; height:200px; margin-top:10px; font-family:ui-monospace,monospace; font-size:12px;"></textarea>
+        <div id="userBulkInviteLog" style="margin-top:10px; font-size:12px;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Record History Tab ===== -->
   <div id="tabLogs" class="tab-panel hidden">
     <div class="panel" style="padding: 12px 14px;">
@@ -1164,7 +1265,7 @@
       <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
         <div>
           <h3 style="margin:0 0 4px;">Inspection Templates</h3>
-          <p class="muted small" style="margin:0;">Bulk-create inspection templates with proper Scope handling. A default Q&amp;A "Page 1" is auto-created for each template.</p>
+          <p class="muted small" style="margin:0;">Bulk-create inspection templates with proper Scope handling. Add pages, questions, and scoring from the Q&amp;A and Scoring sub-tabs.</p>
         </div>
         <div class="card-actions" style="margin:0;">
           <button class="btn ghost" id="btnInspTemplate">Template</button>
@@ -6810,7 +6911,7 @@ state.adminUnlocked = sessionStorage.getItem("ppm-manager.admin.unlocked") === "
 
 // Default visibility — everything on.
 const DEFAULT_VIS = {
-  tabs: { ppm:true, assets:true, inventory:true, portfolio:true, inspections:true, logs:true, settings:true },
+  tabs: { ppm:true, assets:true, inventory:true, portfolio:true, inspections:true, users:true, logs:true, settings:true },
   subtabs: {
     // PPM
     ppm_add: true, ppm_update: true, ppm_jobplan: true, ppm_jobplanv2: true, ppm_routes: true,
@@ -6972,7 +7073,8 @@ function renderAdminPanelLists() {
   const vis = state.adminVis;
   const tabLabels = [
     ["ppm", "PPM"], ["assets", "Assets"], ["inventory", "Inventory"],
-    ["portfolio", "Portfolio"], ["inspections", "Inspections"], ["logs", "Record History"]
+    ["portfolio", "Portfolio"], ["inspections", "Inspections"],
+    ["users", "Users"], ["logs", "Record History"]
   ];
   tabsHost.innerHTML = tabLabels.map(([k, l]) =>
     `<label style="display:flex; align-items:center; gap:8px;">
@@ -7095,7 +7197,11 @@ function switchTab(name) {
   $("#tabInventory")?.classList.toggle("hidden", name !== "inventory");
   $("#tabPortfolio")?.classList.toggle("hidden", name !== "portfolio");
   $("#tabInspections")?.classList.toggle("hidden", name !== "inspections");
+  $("#tabUsers")?.classList.toggle("hidden", name !== "users");
   $("#tabLogs")?.classList.toggle("hidden", name !== "logs");
+  if (name === "users") {
+    try { if (typeof initUsersTab === "function") initUsersTab(); } catch (_) {}
+  }
   if (name === "inspections") {
     try { autoDiscoverInspectionForm(); } catch (_) {}
     try { initModuleForms("inspectionTemplate"); renderFormSelector("inspectionTemplate"); } catch (_) {}
@@ -9525,29 +9631,12 @@ async function importInspBatch(rows) {
       renderInspQueue();
       continue;
     }
-    // Finding-only templates (templateType=2) don't have questions, so skip the
-    // auto Q&A Page 1 creation. Checklist (1) and Checklist+Finding (3) get a page.
-    const isFindingOnly = (row.templateType || "").toLowerCase() === "finding";
-    if (isFindingOnly) {
-      row.status = { kind:"success", text:`Template ${createdId} (Finding-only)` };
-      renderInspQueue();
-      continue;
-    }
-    row.status = { kind:"running", text:`Template ${createdId} — adding Q&A page…` };
-    renderInspQueue();
-    try {
-      const qa = await api("POST",
-        "maintenance/api/v3/modules/qandaPage",
-        { moduleName: "qandaPage", data: { name: "Page 1", description: "", parent: createdId, position: 1 } });
-      const qaRoot = qa?.data || {};
-      const qaRet = qaRoot.qandaPage || qaRoot.list || qaRoot.data || qaRoot;
-      const qaArr = Array.isArray(qaRet) ? qaRet : (qaRet ? [qaRet] : []);
-      const qaId = qaArr[0]?.id || qaRet?.id || null;
-      if (qaId) row._qaPageId = qaId;
-      row.status = { kind:"success", text:`Template ${createdId}` + (qaId ? ` + Page ${qaId}` : ` (Q&A page missing)`) };
-    } catch (e) {
-      row.status = { kind:"warn", text:`Template ${createdId} created, Q&A page failed: ${e.message}` };
-    }
+    // No auto-create of "Page 1" anymore. Previously this step POSTed a
+    // default qandaPage for every template, which meant any user who later
+    // added a page via the Q&A → Pages sub-tab ended up with their first
+    // page numbered "Page 2" on Facilio's side. Now the template is created
+    // bare and the user explicitly adds pages from Q&A → Pages.
+    row.status = { kind:"success", text:`Template ${createdId}` };
     renderInspQueue();
   }
 }
@@ -12223,6 +12312,7 @@ async function askAi(userQuestion, includeContext) {
     state.routeQueue = [];
     state.routeAssocQueue = [];
     state.routesByName = {};
+    state.userQueue = [];
     $("#cfgApiKey").value = "";
     $("#loginStatus").textContent = "Signed out — saved API key wiped.";
     $("#app").classList.add("hidden");
@@ -12230,6 +12320,379 @@ async function askAi(userQuestion, includeContext) {
   });
 
 });
+
+// ============================================================
+// USERS MODULE — Main App user provisioning
+// ============================================================
+//
+// Captured POST shape (Mithun's Facilio org):
+//   POST /maintenance/api/v1/setup/iamuser/adduser
+//   {
+//     sendInvitation: true|false,
+//     appId: 4580,
+//     currencyId: -99,
+//     user: {
+//       scopeType: 0, scopeLevel: null, clientIds: [], clientScopeType: 0,
+//       roleId: <id>, peopleId: null,
+//       people: { id: null, accessibleSpace: [...], groups: [...], permissionSets: [...] },
+//       user:   { ...same as people..., email, name, language, securityPolicyId:-1, currencyId:-1, scoping:null }
+//     }
+//   }
+state.userQueue = state.userQueue || [];
+state.activeUserSub = state.activeUserSub || "mainApp";
+state.userDefaults = state.userDefaults || {};
+const USER_DEFAULTS_LS_KEY = "ppm-manager.userDefaults.v1";
+try {
+  const stored = localStorage.getItem(USER_DEFAULTS_LS_KEY);
+  if (stored) state.userDefaults = JSON.parse(stored);
+} catch (_) {}
+
+const USER_COLUMNS = [
+  { key:"_num",            label:"#",           kind:"num",     width:"w-num",    sticky:true },
+  { key:"_status",         label:"Status",      kind:"status",  width:"w-status", sticky:true },
+  { key:"name",            label:"Name *",      kind:"text",    width:"w-md" },
+  { key:"email",           label:"Email *",     kind:"text",    width:"w-lg" },
+  { key:"role",            label:"Role *",      kind:"text",    width:"w-md", picklist:"roles" },
+  { key:"accessibleSpace", label:"Accessible Space",  kind:"text", width:"w-lg",
+    placeholder:"comma-sep site/building/floor/space names", picklist:"site" },
+  { key:"groups",          label:"Groups",      kind:"text",    width:"w-md", placeholder:"comma-sep", picklist:"groups" },
+  { key:"permissionSets",  label:"Permission Sets", kind:"text", width:"w-md", placeholder:"comma-sep", picklist:"permissionSets" },
+  { key:"language",        label:"Language",    kind:"text",    width:"w-sm", placeholder:"en" },
+  { key:"sendInvite",      label:"Invite?",     kind:"select",  width:"w-sm",
+    options:[{v:"yes",l:"Yes"},{v:"no",l:"No"}] },
+  { key:"_actions",        label:"",            kind:"actions", width:"w-actions" }
+];
+
+function blankUserRow() {
+  return {
+    name:"", email:"", role:"", accessibleSpace:"", groups:"", permissionSets:"",
+    language:"en", sendInvite:"yes",
+    custom:{},
+    _roleId: null, _accessibleSpaceIds: [], _groupIds: [], _permissionSetIds: []
+  };
+}
+
+function renderUserQueue() {
+  const head = $("#userGridHead");
+  if (!head) return;
+  const table = head.closest("table");
+  const existingColgroup = table.querySelector(":scope > colgroup");
+  if (existingColgroup) existingColgroup.remove();
+  delete head.dataset.built;
+  buildGridHead(head, USER_COLUMNS);
+  const tbody = $("#userGrid tbody");
+  tbody.innerHTML = state.userQueue.map((row, idx) =>
+    `<tr>` + USER_COLUMNS.map(c => renderCell(c, row, idx)).join("") + `</tr>`
+  ).join("");
+  $("#userRowCount").textContent = `${state.userQueue.length} row${state.userQueue.length === 1 ? "" : "s"}`;
+}
+
+// Picklist loaders specific to user provisioning. Roles, groups, permission
+// sets live under iam endpoints; falling back to view/all if picklist isn't
+// available on a given org.
+async function loadIamPicklist(key, endpoint) {
+  if (state.cache[key] && state.cache[key].length) return state.cache[key];
+  const tries = [
+    `maintenance/api/v3/picklist/${endpoint}?page=1&perPage=500&viewName=hidden-all`,
+    `maintenance/api/v3/modules/${endpoint}/view/all?moduleName=${endpoint}&viewName=all&page=1&perPage=500`,
+    `maintenance/api/v1/setup/${endpoint}/list?page=1&perPage=500`,
+    `maintenance/api/v1/iam/${endpoint}/list?page=1&perPage=500`
+  ];
+  for (const url of tries) {
+    try {
+      const data = await api("GET", url);
+      const root = data && data.data ? data.data : data;
+      let arr = [];
+      if (Array.isArray(root)) arr = root;
+      else if (root && typeof root === "object") {
+        for (const k of Object.keys(root)) {
+          if (Array.isArray(root[k])) { arr = root[k]; break; }
+        }
+      }
+      const items = arr.map(it => ({
+        id: it.id ?? it.roleId ?? it.groupId ?? it.value,
+        name: (it.name ?? it.label ?? it.title ?? "").toString()
+      })).filter(it => it.id != null && it.name);
+      if (items.length) {
+        state.cache[key] = items;
+        log(`Loaded ${items.length} ${endpoint} for user provisioning.`, "dim");
+        return items;
+      }
+    } catch (_) { /* try next */ }
+  }
+  state.cache[key] = [];
+  return [];
+}
+// Register the iam-specific loaders into the shared PICKLIST_LOADERS so the
+// datalist auto-fill picks them up like any other typeahead.
+PICKLIST_LOADERS.roles          = () => loadIamPicklist("roles",          "roles");
+PICKLIST_LOADERS.permissionSets = () => loadIamPicklist("permissionSets", "permissionSets");
+// "groups" loader already exists from PPM team field — it loads /picklist/groups.
+
+async function resolveUserAccessibleSpace(name) {
+  // Accessible space can be any of site / building / floor / space. Try each
+  // type in order and return the first hit.
+  const trimmed = (name || "").trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  for (const key of ["site", "building", "floor", "space"]) {
+    try {
+      const id = await findInList(key, key, trimmed);
+      if (id) return Number(id);
+    } catch (_) {}
+  }
+  return null;
+}
+
+async function validateUserRow(row) {
+  const errors = [];
+  if (!row.name) errors.push("Name required");
+  if (!row.email) errors.push("Email required");
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) errors.push("Email looks invalid");
+  if (!row.role) errors.push("Role required");
+
+  if (errors.length) {
+    row.status = { kind:"error", text: errors.join("; ") };
+    return false;
+  }
+
+  try {
+    // Role → roleId
+    if (/^\d+$/.test(row.role.trim())) {
+      row._roleId = Number(row.role.trim());
+    } else {
+      const id = await findInList("roles", "roles", row.role);
+      if (!id) throw new Error(`Role not found: ${row.role}`);
+      row._roleId = Number(id);
+    }
+    // Accessible Space → IDs (comma-separated, mixed types allowed)
+    row._accessibleSpaceIds = [];
+    if (row.accessibleSpace) {
+      for (const n of row.accessibleSpace.split(",").map(s => s.trim()).filter(Boolean)) {
+        const id = await resolveUserAccessibleSpace(n);
+        if (!id) throw new Error(`Accessible space not found: ${n}`);
+        row._accessibleSpaceIds.push(id);
+      }
+    }
+    // Groups → IDs
+    row._groupIds = [];
+    if (row.groups) {
+      for (const n of row.groups.split(",").map(s => s.trim()).filter(Boolean)) {
+        if (/^\d+$/.test(n)) { row._groupIds.push(Number(n)); continue; }
+        const id = await findInList("groups", "groups", n);
+        if (!id) throw new Error(`Group not found: ${n}`);
+        row._groupIds.push(Number(id));
+      }
+    }
+    // Permission Sets → IDs
+    row._permissionSetIds = [];
+    if (row.permissionSets) {
+      for (const n of row.permissionSets.split(",").map(s => s.trim()).filter(Boolean)) {
+        if (/^\d+$/.test(n)) { row._permissionSetIds.push(Number(n)); continue; }
+        const id = await findInList("permissionSets", "permissionSets", n);
+        if (!id) throw new Error(`Permission set not found: ${n}`);
+        row._permissionSetIds.push(Number(id));
+      }
+    }
+  } catch (e) {
+    row.status = { kind:"error", text: e.message };
+    return false;
+  }
+  row.status = { kind:"valid", text:"Valid" };
+  return true;
+}
+
+function buildUserPayload(row, opts = {}) {
+  const appId = Number(opts.appId || state.userDefaults.mainAppId || 0);
+  const lang = (row.language || state.userDefaults.language || "en").trim();
+  const peopleShape = {
+    id: null,
+    accessibleSpace: row._accessibleSpaceIds || [],
+    groups: row._groupIds || [],
+    permissionSets: row._permissionSetIds || []
+  };
+  const userShape = {
+    clientScopeType: 0,
+    clientIds: [],
+    language: lang,
+    peopleId: null,
+    securityPolicyId: -1,
+    currencyId: -1,
+    groups: row._groupIds || [],
+    email: (row.email || "").trim(),
+    name: (row.name || "").trim(),
+    roleId: row._roleId,
+    scoping: null,
+    accessibleSpace: row._accessibleSpaceIds || [],
+    permissionSets: row._permissionSetIds || []
+  };
+  return {
+    sendInvitation: row.sendInvite !== "no",
+    appId: appId,
+    currencyId: -99,
+    user: {
+      scopeType: 0,
+      scopeLevel: null,
+      clientIds: [],
+      clientScopeType: 0,
+      roleId: row._roleId,
+      peopleId: null,
+      people: peopleShape,
+      user: userShape
+    }
+  };
+}
+
+async function importUserRow(row) {
+  const appId = Number(state.userDefaults.mainAppId || 0);
+  if (!appId) {
+    row.status = { kind:"error", text:"Set Main App ID in Defaults first." };
+    return;
+  }
+  const ok = await validateUserRow(row);
+  if (!ok) return;
+  const body = buildUserPayload(row, { appId });
+  row.status = { kind:"running", text:"Adding user…" };
+  renderUserQueue();
+  try {
+    const res = await api("POST", "maintenance/api/v1/setup/iamuser/adduser", body);
+    const newId = res?.data?.id || res?.id || res?.user?.id || null;
+    row.status = { kind:"success", text: newId ? `Added user ${newId}` : "Added user" };
+  } catch (e) {
+    row.status = { kind:"error", text: e.message };
+  }
+  renderUserQueue();
+}
+
+async function sendInviteForEmail(email) {
+  const appId = Number(state.userDefaults.mainAppId || 0);
+  // Facilio's invite endpoint shape — best guess based on captured adduser
+  // payload. If your org uses a different endpoint, capture it via DevTools
+  // and we'll plug the URL in here.
+  const body = { appId, email: (email || "").trim() };
+  return api("POST", "maintenance/api/v1/setup/iamuser/sendInvitation", body);
+}
+
+// Wire user-related buttons via delegated handlers so they survive any
+// init-time errors elsewhere.
+document.addEventListener("click", e => {
+  // Users top-level sub-tabs
+  const userSub = e.target.closest("#tabUsers .subtab[data-usersub]");
+  if (userSub) {
+    const which = userSub.dataset.usersub;
+    state.activeUserSub = which;
+    document.querySelectorAll("#tabUsers .subtab[data-usersub]").forEach(b =>
+      b.classList.toggle("active", b === userSub));
+    document.getElementById("userSubMainApp")?.classList.toggle("hidden", which !== "mainApp");
+    document.getElementById("userSubVendor")?.classList.toggle("hidden", which !== "vendor");
+    document.getElementById("userSubClient")?.classList.toggle("hidden", which !== "client");
+    document.getElementById("userSubOccupant")?.classList.toggle("hidden", which !== "occupant");
+    document.getElementById("userSubBulkInvite")?.classList.toggle("hidden", which !== "bulkInvite");
+    return;
+  }
+
+  // Defaults — Save
+  if (e.target.id === "btnUserDefaultsSave") {
+    state.userDefaults = state.userDefaults || {};
+    state.userDefaults.mainAppId = (document.getElementById("userDefMainAppId")?.value || "").trim();
+    state.userDefaults.language  = (document.getElementById("userDefLanguage")?.value || "en").trim();
+    localStorage.setItem(USER_DEFAULTS_LS_KEY, JSON.stringify(state.userDefaults));
+    const st = document.getElementById("userDefaultsStatus");
+    if (st) { st.textContent = "✓ saved"; setTimeout(() => st.textContent = "", 2500); }
+    return;
+  }
+
+  // + New row
+  if (e.target.id === "btnUserNewRow" || e.target.id === "btnUserNewRow2") {
+    if (state.userQueue.length === 0 || state.userQueue.length > 0) {
+      state.userQueue.push(blankUserRow());
+    }
+    renderUserQueue();
+    return;
+  }
+  // Clear all
+  if (e.target.id === "btnUserClearAll") {
+    if (confirm("Clear all user rows?")) {
+      state.userQueue = [blankUserRow()];
+      renderUserQueue();
+    }
+    return;
+  }
+  // Validate all
+  if (e.target.id === "btnUserValidate") {
+    (async () => {
+      for (const r of state.userQueue) {
+        r.status = { kind:"running", text:"Validating…" };
+        renderUserQueue();
+        await validateUserRow(r);
+        renderUserQueue();
+      }
+    })();
+    return;
+  }
+  // Add users (import)
+  if (e.target.id === "btnUserImport") {
+    (async () => {
+      if (!state.userDefaults.mainAppId) {
+        showToast("Set Main App ID in Defaults first", "err");
+        return;
+      }
+      for (const r of state.userQueue) {
+        if (r.status?.kind === "success") continue;
+        await importUserRow(r);
+      }
+      showToast("User import complete");
+    })();
+    return;
+  }
+  // Bulk invite — Send
+  if (e.target.id === "btnUserBulkInviteSend") {
+    (async () => {
+      const ta = document.getElementById("userBulkInviteEmails");
+      const logEl = document.getElementById("userBulkInviteLog");
+      if (!ta || !logEl) return;
+      const emails = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (!emails.length) { showToast("Paste emails first", "warn"); return; }
+      if (!state.userDefaults.mainAppId) { showToast("Set Main App ID in Defaults (Main App tab) first", "err"); return; }
+      logEl.innerHTML = `Sending ${emails.length} invitation${emails.length === 1 ? "" : "s"}…`;
+      let ok = 0, fail = 0; const fails = [];
+      for (const em of emails) {
+        try { await sendInviteForEmail(em); ok++; }
+        catch (e) { fail++; fails.push(`${em} — ${e.message}`); }
+      }
+      logEl.innerHTML =
+        `<div>✓ Sent: <b>${ok}</b></div>` +
+        (fail ? `<div style="color:var(--err);">✗ Failed: <b>${fail}</b><br/>${fails.map(escapeHTML).join("<br/>")}</div>` : "");
+    })();
+    return;
+  }
+  // Bulk invite — Clear
+  if (e.target.id === "btnUserBulkInviteClear") {
+    const ta = document.getElementById("userBulkInviteEmails");
+    const logEl = document.getElementById("userBulkInviteLog");
+    if (ta) ta.value = "";
+    if (logEl) logEl.innerHTML = "";
+    return;
+  }
+});
+
+// Initialise Users grid when its tab is opened.
+function initUsersTab() {
+  if (state.userQueue.length === 0) state.userQueue.push(blankUserRow());
+  // Hydrate Defaults inputs from saved values.
+  const a = document.getElementById("userDefMainAppId");
+  const l = document.getElementById("userDefLanguage");
+  if (a && !a.value && state.userDefaults.mainAppId) a.value = state.userDefaults.mainAppId;
+  if (l && !l.value && state.userDefaults.language)  l.value = state.userDefaults.language;
+  bindGridInputs(
+    "#userGrid",
+    () => state.userQueue,
+    () => USER_COLUMNS,
+    blankUserRow,
+    renderUserQueue
+  );
+  renderUserQueue();
+}
 </script>
 </body>
 </html>
