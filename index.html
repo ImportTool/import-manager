@@ -1042,6 +1042,48 @@
           </div>
         </details>
 
+        <details class="help" style="margin-top:8px;">
+          <summary>Lookup tables — find Role / Group / Permission Set IDs by name</summary>
+          <div class="help-body">
+            <p class="muted small" style="margin:0 0 10px;">Click <b>Fetch</b> to pull the list from Facilio. If fetch fails on this org, paste the raw JSON response (copy from DevTools → Network → the request that loads the dropdown) into the textarea and click <b>Parse JSON</b>. Once loaded, the grid above will accept names instead of IDs.</p>
+            <div id="userLookupSections" style="display:flex; flex-direction:column; gap:14px;">
+              <div data-lookup="roles" data-base="role" data-label="Roles" style="border:1px solid var(--line); border-radius:6px; padding:8px 12px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <b>Roles</b>
+                  <button class="btn ghost small" data-lookup-fetch="roles">Fetch</button>
+                  <button class="btn ghost small" data-lookup-paste-toggle="roles">Paste JSON</button>
+                  <button class="btn ghost small" data-lookup-clear="roles">Clear</button>
+                  <span class="muted small" data-lookup-status="roles"></span>
+                </div>
+                <textarea data-lookup-input="roles" style="height:80px; margin-top:6px; display:none; font-family:ui-monospace,monospace; font-size:11px;" placeholder='Paste raw JSON, e.g. {"roles":[{"id":10873,"name":"CAFM Administrator"},…]}'></textarea>
+                <div data-lookup-render="roles" style="margin-top:6px;"></div>
+              </div>
+              <div data-lookup="groups" data-base="group" data-label="Groups" style="border:1px solid var(--line); border-radius:6px; padding:8px 12px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <b>Groups</b>
+                  <button class="btn ghost small" data-lookup-fetch="groups">Fetch</button>
+                  <button class="btn ghost small" data-lookup-paste-toggle="groups">Paste JSON</button>
+                  <button class="btn ghost small" data-lookup-clear="groups">Clear</button>
+                  <span class="muted small" data-lookup-status="groups"></span>
+                </div>
+                <textarea data-lookup-input="groups" style="height:80px; margin-top:6px; display:none; font-family:ui-monospace,monospace; font-size:11px;" placeholder='Paste raw JSON for groups list'></textarea>
+                <div data-lookup-render="groups" style="margin-top:6px;"></div>
+              </div>
+              <div data-lookup="permissionSets" data-base="permissionSet" data-label="Permission Sets" style="border:1px solid var(--line); border-radius:6px; padding:8px 12px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <b>Permission Sets</b>
+                  <button class="btn ghost small" data-lookup-fetch="permissionSets">Fetch</button>
+                  <button class="btn ghost small" data-lookup-paste-toggle="permissionSets">Paste JSON</button>
+                  <button class="btn ghost small" data-lookup-clear="permissionSets">Clear</button>
+                  <span class="muted small" data-lookup-status="permissionSets"></span>
+                </div>
+                <textarea data-lookup-input="permissionSets" style="height:80px; margin-top:6px; display:none; font-family:ui-monospace,monospace; font-size:11px;" placeholder='Paste raw JSON for permission sets list'></textarea>
+                <div data-lookup-render="permissionSets" style="margin-top:6px;"></div>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <div id="usersMainAppFormSelector" style="margin-top:6px; font-size:12px;"></div>
       </div>
 
@@ -12739,6 +12781,147 @@ async function autoDiscoverMainAppId() {
     if (st) st.textContent = "Discovery failed: " + e.message;
   }
 }
+
+// ---------- Lookup tables (Roles / Groups / Permission Sets) ----------
+//
+// Loads a Facilio IAM list and shows it as a quick Name → ID reference table
+// so the user knows what to type in the grid. Also caches the parsed list
+// into state.cache[key] so name lookups in the grid validation start working.
+const LOOKUP_ENDPOINT_BASE = { roles:"role", groups:"group", permissionSets:"permissionSet" };
+
+function renderLookupTable(key) {
+  const host = document.querySelector(`[data-lookup-render="${key}"]`);
+  if (!host) return;
+  const items = state.cache[key] || [];
+  if (!items.length) { host.innerHTML = ""; return; }
+  const rows = items.map(it => `
+    <tr>
+      <td style="padding:3px 6px;">${escapeHTML(it.name || "")}</td>
+      <td style="padding:3px 8px; font-family:ui-monospace,monospace; color:var(--muted);">${it.id}</td>
+      <td style="padding:3px 6px;">
+        <button class="btn ghost small" data-lookup-copy="${escapeAttr(it.name || "")}">Use name</button>
+        <button class="btn ghost small" data-lookup-copy="${it.id}">Use ID</button>
+      </td>
+    </tr>`).join("");
+  host.innerHTML = `
+    <div style="max-height:200px; overflow:auto; border:1px solid var(--line); border-radius:6px;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead style="position:sticky; top:0; background:var(--panel2, #f3f4f6);">
+          <tr style="text-align:left;">
+            <th style="padding:4px 6px;">Name</th>
+            <th style="padding:4px 8px;">ID</th>
+            <th style="padding:4px 6px; width:160px;">Copy</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function parseLookupJson(raw, key) {
+  // Accepts a Facilio-style response. Most likely shapes:
+  //   {roles: [{id, name, label, ...}, ...]}      ← what the user pasted
+  //   {data: {roles: [...]}}
+  //   [{id, name, ...}]
+  //   {data: [{id, name, ...}]}
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { throw new Error("Invalid JSON: " + e.message); }
+  const root = parsed && parsed.data ? parsed.data : parsed;
+  let arr = [];
+  if (Array.isArray(root)) arr = root;
+  else if (root && typeof root === "object") {
+    const preferred = [key, key.replace(/s$/, ""), "list", "data", "result", "results"];
+    for (const k of preferred) {
+      if (Array.isArray(root[k])) { arr = root[k]; break; }
+    }
+    if (!arr.length) {
+      for (const k of Object.keys(root)) {
+        if (Array.isArray(root[k])) { arr = root[k]; break; }
+      }
+    }
+  }
+  const items = arr.map(it => ({
+    id: it.id ?? it.roleId ?? it.groupId ?? it.permissionSetId ?? it.appId ?? it.value,
+    name: (it.name ?? it.label ?? it.title ?? it.displayName ?? it.linkName ?? "").toString()
+  })).filter(it => it.id != null && it.name);
+  if (!items.length) throw new Error("Couldn't find an array of {id, name} in the JSON");
+  return items;
+}
+
+async function fetchLookupList(key) {
+  const base = LOOKUP_ENDPOINT_BASE[key] || key;
+  // Force re-fetch — clear the cache so loadIamPicklist tries the network.
+  state.cache[key] = null;
+  const items = await loadIamPicklist(key, base);
+  return items;
+}
+
+document.addEventListener("click", async e => {
+  // Lookup — Fetch
+  const fetchBtn = e.target.closest("[data-lookup-fetch]");
+  if (fetchBtn) {
+    const key = fetchBtn.dataset.lookupFetch;
+    const st = document.querySelector(`[data-lookup-status="${key}"]`);
+    if (st) st.textContent = "fetching…";
+    try {
+      const items = await fetchLookupList(key);
+      if (st) st.textContent = items.length ? `✓ ${items.length} loaded` : "✗ no items found via API — try Paste JSON";
+      renderLookupTable(key);
+    } catch (err) {
+      if (st) st.textContent = "✗ " + err.message;
+    }
+    return;
+  }
+  // Lookup — Toggle paste textarea
+  const pasteToggle = e.target.closest("[data-lookup-paste-toggle]");
+  if (pasteToggle) {
+    const key = pasteToggle.dataset.lookupPasteToggle;
+    const ta = document.querySelector(`[data-lookup-input="${key}"]`);
+    if (ta) ta.style.display = ta.style.display === "none" ? "" : "none";
+    return;
+  }
+  // Lookup — Clear
+  const clearBtn = e.target.closest("[data-lookup-clear]");
+  if (clearBtn) {
+    const key = clearBtn.dataset.lookupClear;
+    state.cache[key] = [];
+    const ta = document.querySelector(`[data-lookup-input="${key}"]`);
+    if (ta) { ta.value = ""; ta.style.display = "none"; }
+    renderLookupTable(key);
+    const st = document.querySelector(`[data-lookup-status="${key}"]`);
+    if (st) st.textContent = "";
+    return;
+  }
+  // Lookup — Copy name / ID into clipboard
+  const copyBtn = e.target.closest("[data-lookup-copy]");
+  if (copyBtn) {
+    const v = copyBtn.dataset.lookupCopy;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(v);
+      showToast(`Copied: ${v}`);
+    }
+    return;
+  }
+});
+
+// Lookup — Parse JSON on change (auto-applies when the user pastes/edits)
+document.addEventListener("input", e => {
+  const ta = e.target.closest("[data-lookup-input]");
+  if (!ta) return;
+  const key = ta.dataset.lookupInput;
+  const raw = (ta.value || "").trim();
+  const st = document.querySelector(`[data-lookup-status="${key}"]`);
+  if (!raw) { if (st) st.textContent = ""; return; }
+  try {
+    const items = parseLookupJson(raw, key);
+    state.cache[key] = items;
+    if (st) st.textContent = `✓ ${items.length} parsed from JSON`;
+    renderLookupTable(key);
+  } catch (err) {
+    if (st) st.textContent = "✗ " + err.message;
+  }
+});
 
 async function sendInviteForEmail(email) {
   const appId = Number(state.userDefaults.mainAppId || 0);
