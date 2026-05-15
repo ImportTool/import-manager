@@ -1028,12 +1028,13 @@
             <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
               <label class="field" style="flex:0 0 200px; margin:0;">
                 <span class="lbl">Main App ID *</span>
-                <input id="userDefMainAppId" placeholder="e.g. 4580" />
+                <input id="userDefMainAppId" placeholder="(click Discover)" />
               </label>
               <label class="field" style="flex:0 0 160px; margin:0;">
                 <span class="lbl">Default language</span>
                 <input id="userDefLanguage" value="en" />
               </label>
+              <button class="btn" id="btnUserDiscoverApp">Discover</button>
               <button class="btn ghost" id="btnUserDefaultsSave">Save</button>
               <span class="muted small" id="userDefaultsStatus"></span>
             </div>
@@ -6402,9 +6403,10 @@ function buildPlannedMaintenancePayload(row) {
   if (row._woCategoryId) data.category = { id: row._woCategoryId };
   if (row._priorityId) data.priority = { id: row._priorityId };
   if (row._teamId) data.assignmentGroup = { id: row._teamId };
-  // Route lookup — _routeId is set during validation (numeric input passes
-  // through as-is; named input is resolved to the matching route record).
-  if (row._routeId) data.routes = { id: row._routeId };
+  // Route lookup — Facilio field is `route` (singular). _routeId is set during
+  // validation (numeric input passes through as-is; named input is resolved
+  // to the matching route record).
+  if (row._routeId) data.route = { id: row._routeId };
   data.is_site_visit_required_ = (row.visit === "yes");
   // Custom fields discovered from the form definition pass through verbatim.
   if (row.custom) for (const [k, v] of Object.entries(row.custom)) {
@@ -6810,7 +6812,7 @@ async function importUpdRow(row) {
     if (row._teamId)     data.assignmentGroup = { id: row._teamId };
     if (row._serviceId)  data.service = { id: row._serviceId };
     if (row._vendorId)   data.vendor = { id: row._vendorId };
-    if (row._routeId)    data.routes = { id: row._routeId };
+    if (row._routeId)    data.route = { id: row._routeId };
     if (row.visit === "yes" || row.visit === "no") data.is_site_visit_required_ = (row.visit === "yes");
     if (row.category)    data.assignmentTypeEnum = uppercaseCapitalFields(row.category);
     if (row._spaceCategoryId) data.spaceCategory = { id: row._spaceCategoryId };
@@ -12564,6 +12566,105 @@ async function importUserRow(row) {
   renderUserQueue();
 }
 
+// Auto-discover the Main App ID by listing the org's apps and picking the
+// one that looks like the main / facilio app. Tries a few likely endpoints
+// and falls back to returning the full list so the user can pick manually.
+async function discoverApps() {
+  const tries = [
+    "maintenance/api/v3/applications",
+    "maintenance/api/v3/apps",
+    "maintenance/api/v3/setup/applications",
+    "maintenance/api/v3/setup/apps",
+    "maintenance/api/v1/setup/applications/list",
+    "maintenance/api/v1/setup/apps/list"
+  ];
+  for (const url of tries) {
+    try {
+      const res = await api("GET", url);
+      const root = res?.data || res;
+      let arr = [];
+      if (Array.isArray(root)) arr = root;
+      else if (root && typeof root === "object") {
+        for (const k of ["applications", "apps", "list", "data"]) {
+          if (Array.isArray(root[k])) { arr = root[k]; break; }
+        }
+        if (!arr.length) {
+          for (const k of Object.keys(root)) {
+            if (Array.isArray(root[k])) { arr = root[k]; break; }
+          }
+        }
+      }
+      if (arr.length) {
+        log(`Discovered ${arr.length} app(s) via ${url}`, "ok");
+        return arr.map(a => ({
+          id: a.id ?? a.appId ?? a.value,
+          name: a.name ?? a.displayName ?? a.label ?? a.linkName ?? "(unnamed)",
+          linkName: a.linkName ?? a.lnName ?? "",
+          type: a.type ?? a.appType ?? "",
+          layoutType: a.layoutType ?? "",
+          domain: a.domain ?? ""
+        })).filter(a => a.id != null);
+      }
+    } catch (_) { /* try next */ }
+  }
+  return [];
+}
+
+function pickMainApp(apps) {
+  // Heuristic: Facilio's main app usually has linkName "facilio_main", or
+  // type "FACILIO_MAIN" / "MAIN", or name containing "Main". If only one app
+  // exists, just return it.
+  if (apps.length === 1) return apps[0];
+  const score = a => {
+    let s = 0;
+    const link = (a.linkName || "").toLowerCase();
+    const type = (a.type || "").toString().toUpperCase();
+    const name = (a.name || "").toLowerCase();
+    if (link.includes("facilio_main") || link === "facilio") s += 100;
+    if (type.includes("MAIN") || type === "1") s += 80;
+    if (name.includes("main")) s += 40;
+    if (name === "facilio" || name === "main app") s += 60;
+    // Penalise portal apps so they don't get auto-picked as "main".
+    if (link.includes("vendor") || name.includes("vendor")) s -= 80;
+    if (link.includes("tenant") || name.includes("tenant")) s -= 80;
+    if (link.includes("occupant") || name.includes("occupant")) s -= 80;
+    if (link.includes("client") || name.includes("client")) s -= 80;
+    if (link.includes("portal") || name.includes("portal")) s -= 50;
+    return s;
+  };
+  const sorted = [...apps].sort((a, b) => score(b) - score(a));
+  return sorted[0];
+}
+
+async function autoDiscoverMainAppId() {
+  const inp = document.getElementById("userDefMainAppId");
+  const st  = document.getElementById("userDefaultsStatus");
+  if (!inp) return;
+  if (st) st.textContent = "discovering…";
+  try {
+    const apps = await discoverApps();
+    if (!apps.length) {
+      if (st) st.textContent = "No apps found via API. Enter the ID manually (it's the appId in any captured user-related POST).";
+      return;
+    }
+    const main = pickMainApp(apps);
+    if (main && main.id) {
+      inp.value = String(main.id);
+      state.userDefaults = state.userDefaults || {};
+      state.userDefaults.mainAppId = String(main.id);
+      localStorage.setItem(USER_DEFAULTS_LS_KEY, JSON.stringify(state.userDefaults));
+      if (st) {
+        st.innerHTML = `✓ Picked <b>${escapeHTML(main.name)}</b> (id ${main.id}). ${apps.length > 1 ? `Other apps found: ${apps.filter(a => a.id !== main.id).map(a => `${escapeHTML(a.name)} (${a.id})`).join(", ")}` : ""}`;
+      }
+      log(`Main App ID discovered: ${main.id} (${main.name})`, "ok");
+    } else if (st) {
+      st.textContent = "Couldn't auto-pick main app. Available: " + apps.map(a => `${a.name} (${a.id})`).join(", ");
+    }
+  } catch (e) {
+    if (st) st.textContent = "Discovery failed: " + e.message;
+  }
+}
+
 async function sendInviteForEmail(email) {
   const appId = Number(state.userDefaults.mainAppId || 0);
   // Facilio's invite endpoint shape — best guess based on captured adduser
@@ -12591,6 +12692,11 @@ document.addEventListener("click", e => {
     return;
   }
 
+  // Defaults — Discover Main App
+  if (e.target.id === "btnUserDiscoverApp") {
+    autoDiscoverMainAppId();
+    return;
+  }
   // Defaults — Save
   if (e.target.id === "btnUserDefaultsSave") {
     state.userDefaults = state.userDefaults || {};
@@ -12692,6 +12798,12 @@ function initUsersTab() {
     renderUserQueue
   );
   renderUserQueue();
+  // First time the user opens this tab without a saved Main App ID, auto-
+  // run the Discover flow so they don't have to hunt for the value.
+  if (!state.userDefaults.mainAppId && !state._userAppAutoDiscoverRan) {
+    state._userAppAutoDiscoverRan = true;
+    autoDiscoverMainAppId();
+  }
 }
 </script>
 </body>
