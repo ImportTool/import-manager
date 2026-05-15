@@ -12355,8 +12355,18 @@ const USER_COLUMNS = [
   { key:"name",            label:"Name *",      kind:"text",    width:"w-md" },
   { key:"email",           label:"Email *",     kind:"text",    width:"w-lg" },
   { key:"role",            label:"Role *",      kind:"text",    width:"w-md", picklist:"roles" },
+  // Scope Type drives which picklist Accessible Space resolves against.
+  // Facilio rejects mixing space + building IDs on the same user, so we
+  // force the user to pick exactly one type and validate against just that.
+  { key:"scopeType",       label:"Scope Type *", kind:"select", width:"w-sm",
+    options:[
+      { v:"building", l:"Building" },
+      { v:"space",    l:"Space" },
+      { v:"site",     l:"Site" },
+      { v:"floor",    l:"Floor" }
+    ] },
   { key:"accessibleSpace", label:"Accessible Space",  kind:"text", width:"w-lg",
-    placeholder:"comma-sep site/building/floor/space names", picklist:"site" },
+    placeholder:"comma-sep names of the selected scope type" },
   { key:"groups",          label:"Groups",      kind:"text",    width:"w-md", placeholder:"comma-sep", picklist:"groups" },
   { key:"permissionSets",  label:"Permission Sets", kind:"text", width:"w-md", placeholder:"comma-sep", picklist:"permissionSets" },
   { key:"language",        label:"Language",    kind:"text",    width:"w-sm", placeholder:"en" },
@@ -12367,7 +12377,9 @@ const USER_COLUMNS = [
 
 function blankUserRow() {
   return {
-    name:"", email:"", role:"", accessibleSpace:"", groups:"", permissionSets:"",
+    name:"", email:"", role:"",
+    scopeType:"building", accessibleSpace:"",
+    groups:"", permissionSets:"",
     language:"en", sendInvite:"yes",
     custom:{},
     _roleId: null, _accessibleSpaceIds: [], _groupIds: [], _permissionSetIds: []
@@ -12392,32 +12404,54 @@ function renderUserQueue() {
 // Picklist loaders specific to user provisioning. Roles, groups, permission
 // sets live under iam endpoints; falling back to view/all if picklist isn't
 // available on a given org.
-async function loadIamPicklist(key, endpoint) {
+async function loadIamPicklist(key, endpointBase) {
+  // Roles / permission sets / apps live under Facilio's IAM endpoints, NOT
+  // the regular /modules namespace. Try every shape we know about and keep
+  // the first one that returns a usable list.
   if (state.cache[key] && state.cache[key].length) return state.cache[key];
-  const tries = [
-    `maintenance/api/v3/picklist/${endpoint}?page=1&perPage=500&viewName=hidden-all`,
-    `maintenance/api/v3/modules/${endpoint}/view/all?moduleName=${endpoint}&viewName=all&page=1&perPage=500`,
-    `maintenance/api/v1/setup/${endpoint}/list?page=1&perPage=500`,
-    `maintenance/api/v1/iam/${endpoint}/list?page=1&perPage=500`
+  const variants = [
+    `maintenance/api/v3/iam/${endpointBase}/list?page=1&perPage=500`,
+    `maintenance/api/v3/iam/${endpointBase}s/list?page=1&perPage=500`,
+    `maintenance/api/v3/iam/${endpointBase}`,
+    `maintenance/api/v3/iam/${endpointBase}s`,
+    `maintenance/api/v1/iam/${endpointBase}/list?page=1&perPage=500`,
+    `maintenance/api/v1/iam/${endpointBase}s/list?page=1&perPage=500`,
+    `maintenance/api/v1/iam/${endpointBase}`,
+    `maintenance/api/v1/iam/${endpointBase}s`,
+    `maintenance/api/v3/setup/${endpointBase}/list?page=1&perPage=500`,
+    `maintenance/api/v3/setup/${endpointBase}s/list?page=1&perPage=500`,
+    `maintenance/api/v3/setup/${endpointBase}`,
+    `maintenance/api/v3/setup/${endpointBase}s`,
+    `maintenance/api/v1/setup/${endpointBase}/list?page=1&perPage=500`,
+    `maintenance/api/v1/setup/${endpointBase}s/list?page=1&perPage=500`,
+    `maintenance/api/v1/setup/${endpointBase}`,
+    `maintenance/api/v1/setup/${endpointBase}s`
   ];
-  for (const url of tries) {
+  for (const url of variants) {
     try {
       const data = await api("GET", url);
       const root = data && data.data ? data.data : data;
       let arr = [];
       if (Array.isArray(root)) arr = root;
       else if (root && typeof root === "object") {
-        for (const k of Object.keys(root)) {
+        // Prefer the named array key matching the endpoint, then any array key.
+        const preferred = [endpointBase, endpointBase + "s", "list", "data", "result", "results"];
+        for (const k of preferred) {
           if (Array.isArray(root[k])) { arr = root[k]; break; }
+        }
+        if (!arr.length) {
+          for (const k of Object.keys(root)) {
+            if (Array.isArray(root[k])) { arr = root[k]; break; }
+          }
         }
       }
       const items = arr.map(it => ({
-        id: it.id ?? it.roleId ?? it.groupId ?? it.value,
-        name: (it.name ?? it.label ?? it.title ?? "").toString()
+        id: it.id ?? it.roleId ?? it.groupId ?? it.permissionSetId ?? it.appId ?? it.value,
+        name: (it.name ?? it.label ?? it.title ?? it.displayName ?? it.linkName ?? "").toString()
       })).filter(it => it.id != null && it.name);
       if (items.length) {
         state.cache[key] = items;
-        log(`Loaded ${items.length} ${endpoint} for user provisioning.`, "dim");
+        log(`Loaded ${items.length} ${endpointBase} via ${url}`, "dim");
         return items;
       }
     } catch (_) { /* try next */ }
@@ -12425,24 +12459,39 @@ async function loadIamPicklist(key, endpoint) {
   state.cache[key] = [];
   return [];
 }
+
+// Find an IAM item (role / permissionSet / app) by name using the IAM
+// endpoint variants. Falls back to numeric ID passthrough so users can paste
+// raw IDs from a captured POST if name resolution fails on a given org.
+async function findIamIdByName(key, endpointBase, name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const list = await loadIamPicklist(key, endpointBase);
+  const target = trimmed.toLowerCase();
+  for (const it of list) {
+    if ((it.name || "").trim().toLowerCase() === target) return it.id;
+  }
+  return null;
+}
 // Register the iam-specific loaders into the shared PICKLIST_LOADERS so the
 // datalist auto-fill picks them up like any other typeahead.
 PICKLIST_LOADERS.roles          = () => loadIamPicklist("roles",          "roles");
 PICKLIST_LOADERS.permissionSets = () => loadIamPicklist("permissionSets", "permissionSets");
 // "groups" loader already exists from PPM team field — it loads /picklist/groups.
 
-async function resolveUserAccessibleSpace(name) {
-  // Accessible space can be any of site / building / floor / space. Try each
-  // type in order and return the first hit.
+async function resolveUserAccessibleSpace(name, scopeType) {
+  // Resolve a name against ONE specific scope type only — Facilio's
+  // adduser endpoint won't accept mixing space + building IDs on the same
+  // user, so the user must pick one type per row.
   const trimmed = (name || "").trim();
   if (!trimmed) return null;
   if (/^\d+$/.test(trimmed)) return Number(trimmed);
-  for (const key of ["site", "building", "floor", "space"]) {
-    try {
-      const id = await findInList(key, key, trimmed);
-      if (id) return Number(id);
-    } catch (_) {}
-  }
+  const key = (scopeType || "building").toLowerCase();
+  try {
+    const id = await findInList(key, key, trimmed);
+    if (id) return Number(id);
+  } catch (_) {}
   return null;
 }
 
@@ -12459,20 +12508,20 @@ async function validateUserRow(row) {
   }
 
   try {
-    // Role → roleId
-    if (/^\d+$/.test(row.role.trim())) {
-      row._roleId = Number(row.role.trim());
-    } else {
-      const id = await findInList("roles", "roles", row.role);
-      if (!id) throw new Error(`Role not found: ${row.role}`);
-      row._roleId = Number(id);
+    // Role → roleId. Roles live under Facilio's IAM endpoints, not /modules.
+    const roleId = await findIamIdByName("roles", "role", row.role);
+    if (!roleId) {
+      throw new Error(`Role not found: ${row.role}. Try pasting the numeric Role ID (visible as roleId in a captured adduser POST).`);
     }
-    // Accessible Space → IDs (comma-separated, mixed types allowed)
+    row._roleId = Number(roleId);
+    // Accessible Space → IDs, scoped to the user's chosen type (Building /
+    // Space / Site / Floor). No mixing allowed.
     row._accessibleSpaceIds = [];
     if (row.accessibleSpace) {
+      const scope = (row.scopeType || "building").toLowerCase();
       for (const n of row.accessibleSpace.split(",").map(s => s.trim()).filter(Boolean)) {
-        const id = await resolveUserAccessibleSpace(n);
-        if (!id) throw new Error(`Accessible space not found: ${n}`);
+        const id = await resolveUserAccessibleSpace(n, scope);
+        if (!id) throw new Error(`Accessible ${scope} not found: ${n}`);
         row._accessibleSpaceIds.push(id);
       }
     }
@@ -12486,13 +12535,12 @@ async function validateUserRow(row) {
         row._groupIds.push(Number(id));
       }
     }
-    // Permission Sets → IDs
+    // Permission Sets → IDs (also IAM endpoints).
     row._permissionSetIds = [];
     if (row.permissionSets) {
       for (const n of row.permissionSets.split(",").map(s => s.trim()).filter(Boolean)) {
-        if (/^\d+$/.test(n)) { row._permissionSetIds.push(Number(n)); continue; }
-        const id = await findInList("permissionSets", "permissionSets", n);
-        if (!id) throw new Error(`Permission set not found: ${n}`);
+        const id = await findIamIdByName("permissionSets", "permissionSet", n);
+        if (!id) throw new Error(`Permission set not found: ${n}. Try pasting the numeric ID.`);
         row._permissionSetIds.push(Number(id));
       }
     }
@@ -12570,13 +12618,25 @@ async function importUserRow(row) {
 // one that looks like the main / facilio app. Tries a few likely endpoints
 // and falls back to returning the full list so the user can pick manually.
 async function discoverApps() {
+  // Apps live under Facilio's IAM/setup namespace. We try every shape we
+  // know of and stop at the first one that returns a usable list.
   const tries = [
-    "maintenance/api/v3/applications",
-    "maintenance/api/v3/apps",
+    "maintenance/api/v3/iam/application/list?page=1&perPage=100",
+    "maintenance/api/v3/iam/applications/list?page=1&perPage=100",
+    "maintenance/api/v3/iam/application",
+    "maintenance/api/v3/iam/applications",
+    "maintenance/api/v1/iam/application/list?page=1&perPage=100",
+    "maintenance/api/v1/iam/applications/list?page=1&perPage=100",
+    "maintenance/api/v3/setup/application/list?page=1&perPage=100",
+    "maintenance/api/v3/setup/applications/list?page=1&perPage=100",
     "maintenance/api/v3/setup/applications",
     "maintenance/api/v3/setup/apps",
-    "maintenance/api/v1/setup/applications/list",
-    "maintenance/api/v1/setup/apps/list"
+    "maintenance/api/v1/setup/application/list?page=1&perPage=100",
+    "maintenance/api/v1/setup/applications/list?page=1&perPage=100",
+    "maintenance/api/v1/setup/applications",
+    "maintenance/api/v1/setup/apps",
+    "maintenance/api/v3/applications",
+    "maintenance/api/v3/apps"
   ];
   for (const url of tries) {
     try {
