@@ -12406,10 +12406,21 @@ function renderUserQueue() {
 // available on a given org.
 async function loadIamPicklist(key, endpointBase) {
   // Roles / permission sets / apps live under Facilio's IAM endpoints, NOT
-  // the regular /modules namespace. Try every shape we know about and keep
-  // the first one that returns a usable list.
+  // the regular /modules namespace. The captured adduser endpoint sits at
+  // /maintenance/api/v1/setup/iamuser/adduser, so by symmetry roles + perm
+  // sets + apps likely sit at /maintenance/api/v1/setup/iam<thing>/list.
+  // We still try plain /iam/<thing> and /setup/<thing> as fallbacks.
   if (state.cache[key] && state.cache[key].length) return state.cache[key];
+  const cap = endpointBase.charAt(0).toUpperCase() + endpointBase.slice(1);
   const variants = [
+    // iam<Thing> compound prefix (matches /setup/iamuser/adduser pattern)
+    `maintenance/api/v1/setup/iam${cap}/list?page=1&perPage=500`,
+    `maintenance/api/v1/setup/iam${cap}s/list?page=1&perPage=500`,
+    `maintenance/api/v3/setup/iam${cap}/list?page=1&perPage=500`,
+    `maintenance/api/v3/setup/iam${cap}s/list?page=1&perPage=500`,
+    `maintenance/api/v1/setup/iam${endpointBase}/list?page=1&perPage=500`,
+    `maintenance/api/v1/setup/iam${endpointBase}s/list?page=1&perPage=500`,
+    // /iam/<thing> namespace
     `maintenance/api/v3/iam/${endpointBase}/list?page=1&perPage=500`,
     `maintenance/api/v3/iam/${endpointBase}s/list?page=1&perPage=500`,
     `maintenance/api/v3/iam/${endpointBase}`,
@@ -12418,6 +12429,7 @@ async function loadIamPicklist(key, endpointBase) {
     `maintenance/api/v1/iam/${endpointBase}s/list?page=1&perPage=500`,
     `maintenance/api/v1/iam/${endpointBase}`,
     `maintenance/api/v1/iam/${endpointBase}s`,
+    // /setup/<thing> without iam prefix
     `maintenance/api/v3/setup/${endpointBase}/list?page=1&perPage=500`,
     `maintenance/api/v3/setup/${endpointBase}s/list?page=1&perPage=500`,
     `maintenance/api/v3/setup/${endpointBase}`,
@@ -12476,8 +12488,11 @@ async function findIamIdByName(key, endpointBase, name) {
 }
 // Register the iam-specific loaders into the shared PICKLIST_LOADERS so the
 // datalist auto-fill picks them up like any other typeahead.
-PICKLIST_LOADERS.roles          = () => loadIamPicklist("roles",          "roles");
-PICKLIST_LOADERS.permissionSets = () => loadIamPicklist("permissionSets", "permissionSets");
+// Pass SINGULAR endpointBase forms — the IAM lookup tries both `/iam/role`
+// and `/iam/roles` variants, so a plural base produces wrong URLs like
+// `/iam/roless/list`.
+PICKLIST_LOADERS.roles          = () => loadIamPicklist("roles",          "role");
+PICKLIST_LOADERS.permissionSets = () => loadIamPicklist("permissionSets", "permissionSet");
 // "groups" loader already exists from PPM team field — it loads /picklist/groups.
 
 async function resolveUserAccessibleSpace(name, scopeType) {
