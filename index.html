@@ -13059,6 +13059,43 @@ function namesByIds(cacheKey, ids) {
   return ids.map(id => nameById(cacheKey, id)).join(", ");
 }
 
+// Accessible space resolution — an entry on a user's accessibleSpace array
+// can be any of site / building / floor / space. We resolve by scanning all
+// four caches and returning "Name (Type)". Falls back to the raw id when no
+// match is found.
+function resolveSpaceName(id) {
+  if (id == null) return "";
+  const types = [
+    ["space",    "Space"],
+    ["building", "Building"],
+    ["floor",    "Floor"],
+    ["site",     "Site"]
+  ];
+  for (const [key, label] of types) {
+    const list = state.cache[key] || [];
+    const hit = list.find(it => Number(it.id) === Number(id));
+    if (hit) return `${hit.name} (${label})`;
+  }
+  return String(id);
+}
+
+function resolveSpaceNames(ids) {
+  if (!Array.isArray(ids) || !ids.length) return "";
+  return ids.map(resolveSpaceName).join(", ");
+}
+
+async function preloadSpacePicklists() {
+  // Load site/building/floor/space picklists in parallel. Each loadFullPicklist
+  // call caches into state.cache so subsequent resolveSpaceName calls are sync.
+  // If any picklist fails we just skip it — the IDs will be shown as-is.
+  await Promise.all([
+    loadFullPicklist("site",     "site").catch(() => []),
+    loadFullPicklist("building", "building").catch(() => []),
+    loadFullPicklist("floor",    "floor").catch(() => []),
+    loadFullPicklist("space",    "space").catch(() => [])
+  ]);
+}
+
 async function fetchAllUsers() {
   // Known good shape (captured from Facilio UI):
   //   GET /maintenance/api/v1/setup/iamuser/userlist?appId=<mainAppId>&page=N&perPage=50&withMFA=true
@@ -13195,7 +13232,7 @@ function renderUserExport() {
       <td style="padding:6px 10px;">${escapeHTML(u.phone)}</td>
       <td style="padding:6px 10px;">${escapeHTML(u.role)}</td>
       <td style="padding:6px 10px;">${escapeHTML(u.app)}</td>
-      <td style="padding:6px 10px;">${escapeHTML(u.accessibleSpaceIds.join(", "))}</td>
+      <td style="padding:6px 10px;">${escapeHTML(resolveSpaceNames(u.accessibleSpaceIds))}</td>
       <td style="padding:6px 10px;">${escapeHTML(namesByIds("groups", u.groupIds))}</td>
       <td style="padding:6px 10px;">${escapeHTML(namesByIds("permissionSets", u.permissionSetIds))}</td>
       <td style="padding:6px 10px;">${escapeHTML(u.status)}</td>
@@ -13211,13 +13248,23 @@ function renderUserExport() {
 function downloadUsersXlsx() {
   if (!state.userExport.length || typeof XLSX === "undefined") return;
   const sheetRows = [
-    ["Name", "Email", "Phone", "Role", "Role ID", "App ID", "Accessible Space IDs", "Groups", "Group IDs", "Permission Sets", "Permission Set IDs", "Status", "User ID", "People ID"]
+    [
+      "Name", "Email", "Phone",
+      "Role", "Role ID",
+      "App ID",
+      "Accessible Space", "Accessible Space IDs",
+      "Groups", "Group IDs",
+      "Permission Sets", "Permission Set IDs",
+      "Status",
+      "User ID", "People ID"
+    ]
   ];
   for (const u of state.userExport) {
     sheetRows.push([
       u.name, u.email, u.phone,
       u.role, u.roleId ?? "",
       u.appId ?? "",
+      resolveSpaceNames(u.accessibleSpaceIds),
       u.accessibleSpaceIds.join(", "),
       namesByIds("groups", u.groupIds),
       u.groupIds.join(", "),
@@ -13246,6 +13293,10 @@ document.addEventListener("click", async e => {
       }
       return;
     }
+    if (st) st.textContent = "Loading site / building / floor / space lookups… (one-time per session)";
+    // Pre-load the spatial picklists so accessibleSpace IDs render as
+    // "Building 2 (Building)" instead of raw numeric ids.
+    await preloadSpacePicklists();
     if (st) st.textContent = "Fetching user list…";
     state.userExport = [];
     renderUserExport();
@@ -13267,7 +13318,11 @@ document.addEventListener("click", async e => {
       for (let i = 0; i < items.length; i += BATCH) {
         const slice = items.slice(i, i + BATCH);
         await Promise.all(slice.map(async (u, idx) => {
-          const ouId = u.id || u.ouid;
+          // ouId param for the summary endpoint = orgUserId, NOT id. The
+          // list response has three different IDs (id, orgUserId,
+          // iamOrgUserId) and the detail endpoint only accepts orgUserId
+          // (which equals "ouid" in the response).
+          const ouId = u.orgUserId || u.ouid || u.ouId || u.id;
           const detail = await fetchUserDetail(ouId, appId);
           state.userExport[i + idx] = normaliseUserRecord(u, detail);
           done++;
