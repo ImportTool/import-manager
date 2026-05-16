@@ -13084,16 +13084,54 @@ function resolveSpaceNames(ids) {
   return ids.map(resolveSpaceName).join(", ");
 }
 
+async function loadFullModuleList(key, moduleName) {
+  // Pulls EVERY record from /modules/<moduleName>/view/all, paginated. Unlike
+  // /picklist/... this doesn't apply hierarchy filtering — it returns
+  // buildings that aren't tied to a site (e.g. "All Sites" buildings) too.
+  // Merges into state.cache[key] (additively, so picklist hits aren't lost).
+  const PAGE_SIZE = 500;
+  const existing = state.cache[key] || [];
+  const byId = new Map(existing.map(it => [Number(it.id), it]));
+  try {
+    for (let page = 1; page <= 200; page++) {
+      const url = `maintenance/api/v3/modules/${moduleName}/view/all?moduleName=${moduleName}&viewName=all&page=${page}&perPage=${PAGE_SIZE}`;
+      const data = await api("GET", url);
+      const root = data && data.data ? data.data : data;
+      let arr = [];
+      if (Array.isArray(root)) arr = root;
+      else if (root && typeof root === "object") {
+        for (const k of Object.keys(root)) {
+          if (Array.isArray(root[k])) { arr = root[k]; break; }
+        }
+      }
+      if (!arr.length) break;
+      for (const it of arr) {
+        const id = it.id ?? it.value;
+        if (id == null) continue;
+        if (byId.has(Number(id))) continue;
+        byId.set(Number(id), {
+          id,
+          name: (it.name ?? it.displayName ?? it.label ?? `#${id}`).toString()
+        });
+      }
+      if (arr.length < PAGE_SIZE) break;
+    }
+  } catch (_) { /* swallow */ }
+  state.cache[key] = [...byId.values()];
+  return state.cache[key];
+}
+
 async function preloadSpacePicklists() {
-  // Load site/building/floor/space picklists in parallel. Each loadFullPicklist
-  // call caches into state.cache so subsequent resolveSpaceName calls are sync.
-  // If any picklist fails we just skip it — the IDs will be shown as-is.
+  // Pull the FULL module list for each spatial type so the export can resolve
+  // every possible accessibleSpace id — including buildings that aren't
+  // attached to a site (the "All Sites" ones that /picklist filters out).
   await Promise.all([
-    loadFullPicklist("site",     "site").catch(() => []),
-    loadFullPicklist("building", "building").catch(() => []),
-    loadFullPicklist("floor",    "floor").catch(() => []),
-    loadFullPicklist("space",    "space").catch(() => [])
+    loadFullModuleList("site",     "site").catch(() => []),
+    loadFullModuleList("building", "building").catch(() => []),
+    loadFullModuleList("floor",    "floor").catch(() => []),
+    loadFullModuleList("space",    "space").catch(() => [])
   ]);
+  log(`Spatial lookups: ${state.cache.site?.length||0} sites, ${state.cache.building?.length||0} buildings, ${state.cache.floor?.length||0} floors, ${state.cache.space?.length||0} spaces`, "dim");
 }
 
 async function fetchAllUsers() {
