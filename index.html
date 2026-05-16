@@ -1002,6 +1002,7 @@
       <button class="subtab" data-usersub="client">Client Portal</button>
       <button class="subtab" data-usersub="occupant">Occupant Portal</button>
       <button class="subtab" data-usersub="bulkInvite">Bulk Invite</button>
+      <button class="subtab" data-usersub="export">Export</button>
     </div>
 
     <div id="userSubMainApp">
@@ -1116,6 +1117,51 @@
     <div id="userSubOccupant" class="hidden">
       <div class="panel" style="padding: 12px 14px;">
         <p class="muted small" style="margin:0;">Occupant portal user provisioning — coming soon once we have the captured API payload.</p>
+      </div>
+    </div>
+
+    <div id="userSubExport" class="hidden">
+      <div class="panel" style="padding: 12px 14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin:0 0 4px;">Export Existing Users</h3>
+            <p class="muted small" style="margin:0;">Fetch every user on this Facilio org with their email, role, accessible spaces, groups, and permission sets. Useful for periodic audits — pulls the data, shows it in a table, lets you download as an Excel file.</p>
+          </div>
+          <div class="card-actions" style="margin:0;">
+            <button class="btn" id="btnUserExportFetch">Fetch all users</button>
+            <button class="btn success" id="btnUserExportXlsx" disabled>Download Excel</button>
+            <button class="btn ghost" id="btnUserExportClear">Clear</button>
+          </div>
+        </div>
+        <p class="muted small" style="margin:8px 0 0;">Tip: load the Role / Group / Permission Set lookup tables on the <b>Main App</b> sub-tab first — that way IDs in the export are auto-translated into names. Otherwise you'll see numeric IDs.</p>
+        <div id="userExportStatus" class="muted small" style="margin-top:6px;"></div>
+      </div>
+
+      <div class="panel" style="padding: 0;">
+        <div class="grid-scroll" style="max-height:60vh; overflow:auto;">
+          <table class="grid" id="userExportGrid" style="width:max-content; min-width:100%;">
+            <thead>
+              <tr id="userExportGridHead">
+                <th style="padding:8px 10px;">#</th>
+                <th style="padding:8px 10px;">Name</th>
+                <th style="padding:8px 10px;">Email</th>
+                <th style="padding:8px 10px;">Phone</th>
+                <th style="padding:8px 10px;">Role</th>
+                <th style="padding:8px 10px;">App</th>
+                <th style="padding:8px 10px;">Accessible Space</th>
+                <th style="padding:8px 10px;">Groups</th>
+                <th style="padding:8px 10px;">Permission Sets</th>
+                <th style="padding:8px 10px;">Status</th>
+                <th style="padding:8px 10px;">User ID</th>
+                <th style="padding:8px 10px;">People ID</th>
+              </tr>
+            </thead>
+            <tbody id="userExportGridBody"></tbody>
+          </table>
+        </div>
+        <div style="padding: 10px 14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+          <span class="muted small" id="userExportRowCount">0 users</span>
+        </div>
       </div>
     </div>
 
@@ -12819,34 +12865,82 @@ function renderLookupTable(key) {
 }
 
 function parseLookupJson(raw, key) {
-  // Accepts a Facilio-style response. Most likely shapes:
-  //   {roles: [{id, name, label, ...}, ...]}      ← what the user pasted
-  //   {data: {roles: [...]}}
-  //   [{id, name, ...}]
-  //   {data: [{id, name, ...}]}
-  let parsed;
-  try { parsed = JSON.parse(raw); }
-  catch (e) { throw new Error("Invalid JSON: " + e.message); }
-  const root = parsed && parsed.data ? parsed.data : parsed;
-  let arr = [];
-  if (Array.isArray(root)) arr = root;
-  else if (root && typeof root === "object") {
-    const preferred = [key, key.replace(/s$/, ""), "list", "data", "result", "results"];
-    for (const k of preferred) {
-      if (Array.isArray(root[k])) { arr = root[k]; break; }
-    }
-    if (!arr.length) {
-      for (const k of Object.keys(root)) {
+  // Accepts multiple input formats, in order of preference:
+  //   1. Raw JSON: {roles: [{id, name, label, ...}, ...]} or {data: {...}}
+  //   2. Bare JSON array: [{id, name, ...}]
+  //   3. DevTools preview tree (the indented "1. id: 16848 / 6. name: Technician" form)
+  //   4. Tab- or comma-separated lines: "16848<TAB>Technician" or "16848, Technician"
+
+  // --- Try 1 + 2: real JSON ---
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch (_) { /* fall through */ }
+  if (parsed) {
+    const root = parsed && parsed.data ? parsed.data : parsed;
+    let arr = [];
+    if (Array.isArray(root)) arr = root;
+    else if (root && typeof root === "object") {
+      const preferred = [key, key.replace(/s$/, ""), "list", "data", "result", "results"];
+      for (const k of preferred) {
         if (Array.isArray(root[k])) { arr = root[k]; break; }
       }
+      if (!arr.length) {
+        for (const k of Object.keys(root)) {
+          if (Array.isArray(root[k])) { arr = root[k]; break; }
+        }
+      }
     }
+    const items = arr.map(it => ({
+      id: it.id ?? it.roleId ?? it.groupId ?? it.permissionSetId ?? it.appId ?? it.value,
+      name: (it.name ?? it.label ?? it.title ?? it.displayName ?? it.linkName ?? "").toString()
+    })).filter(it => it.id != null && it.name);
+    if (items.length) return items;
   }
-  const items = arr.map(it => ({
-    id: it.id ?? it.roleId ?? it.groupId ?? it.permissionSetId ?? it.appId ?? it.value,
-    name: (it.name ?? it.label ?? it.title ?? it.displayName ?? it.linkName ?? "").toString()
-  })).filter(it => it.id != null && it.name);
-  if (!items.length) throw new Error("Couldn't find an array of {id, name} in the JSON");
-  return items;
+
+  // --- Try 3: DevTools preview tree ---
+  // Heuristic: each top-level numbered entry contains lines like
+  //   "3. id: 16848"  and  "7. name: "Technician""
+  // We scan all id-lines and pair each with the nearest following name-line.
+  // Works even when key names have varying indentation / numbering.
+  const idRegex   = /\bid\s*:\s*(\d+)/g;
+  const nameRegex = /\b(?:name|label|displayName)\s*:\s*"([^"]+)"/g;
+  const ids = [...raw.matchAll(idRegex)].map(m => ({ i: m.index, id: Number(m[1]) }));
+  const names = [...raw.matchAll(nameRegex)].map(m => ({ i: m.index, name: m[1] }));
+  if (ids.length && names.length) {
+    const treeItems = [];
+    const used = new Set();
+    for (const idEntry of ids) {
+      // Find the next name AFTER this id's position that isn't already used.
+      const next = names.find(n => n.i > idEntry.i && !used.has(n.i));
+      if (next) {
+        used.add(next.i);
+        treeItems.push({ id: idEntry.id, name: next.name });
+      }
+    }
+    // Dedupe by id (DevTools preview duplicates id/roleId in the same entry).
+    const seenId = new Set();
+    const deduped = treeItems.filter(it => {
+      if (seenId.has(it.id)) return false;
+      seenId.add(it.id);
+      return true;
+    });
+    if (deduped.length) return deduped;
+  }
+
+  // --- Try 4: tab / comma-separated id name lines ---
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const lineItems = [];
+  for (const line of lines) {
+    // Split on tab, comma, or 2+ spaces. Accept "id<sep>name" or "name<sep>id".
+    const parts = line.split(/\t|,|\s{2,}/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    let id = null, name = null;
+    if (/^\d+$/.test(parts[0])) { id = Number(parts[0]); name = parts.slice(1).join(" "); }
+    else if (/^\d+$/.test(parts[parts.length - 1])) { id = Number(parts[parts.length - 1]); name = parts.slice(0, -1).join(" "); }
+    if (id != null && name) lineItems.push({ id, name });
+  }
+  if (lineItems.length) return lineItems;
+
+  throw new Error("Couldn't extract any (id, name) pairs. Paste raw JSON from DevTools Response tab, or one 'id<TAB>name' pair per line.");
 }
 
 async function fetchLookupList(key) {
@@ -12923,6 +13017,198 @@ document.addEventListener("input", e => {
   }
 });
 
+// ---------- Export Existing Users ----------
+//
+// Pull every user on the org, normalise the records, render them in a
+// table, and let the user download as .xlsx. Tries several Facilio user-
+// listing endpoints (the captured adduser endpoint sits at v1/setup/
+// iamuser/adduser, so by symmetry v1/setup/iamuser/list is the prime
+// candidate). Falls back to /people module if iamuser isn't available.
+state.userExport = state.userExport || [];
+
+function nameById(cacheKey, id) {
+  // Map a numeric id back to its name using the cache populated by the
+  // Lookup tables (Roles / Groups / Permission Sets). Falls back to the
+  // raw id when no mapping is loaded.
+  if (id == null) return "";
+  const list = state.cache[cacheKey] || [];
+  const hit = list.find(it => Number(it.id) === Number(id));
+  return hit ? hit.name : String(id);
+}
+
+function namesByIds(cacheKey, ids) {
+  if (!Array.isArray(ids) || !ids.length) return "";
+  return ids.map(id => nameById(cacheKey, id)).join(", ");
+}
+
+async function fetchAllUsers() {
+  // Try the most likely endpoints in order. First one that returns an
+  // array with usable user shapes wins. Paginate up to 100 pages.
+  const tries = [
+    "maintenance/api/v1/setup/iamuser/list",
+    "maintenance/api/v1/setup/iamuser",
+    "maintenance/api/v3/setup/iamuser/list",
+    "maintenance/api/v3/setup/iamUser/list",
+    "maintenance/api/v1/setup/users/list",
+    "maintenance/api/v3/setup/users/list",
+    "maintenance/api/v3/people/view/all?moduleName=people",
+    "maintenance/api/v3/modules/people/view/all?moduleName=people",
+    "maintenance/api/v3/picklist/users"
+  ];
+  const PAGE_SIZE = 100;
+  for (const baseUrl of tries) {
+    try {
+      const all = [];
+      for (let page = 1; page <= 100; page++) {
+        const sep = baseUrl.includes("?") ? "&" : "?";
+        const url = `${baseUrl}${sep}page=${page}&perPage=${PAGE_SIZE}`;
+        const res = await api("GET", url);
+        const root = res && res.data ? res.data : res;
+        let arr = [];
+        if (Array.isArray(root)) arr = root;
+        else if (root && typeof root === "object") {
+          // Prefer named arrays
+          for (const k of ["users", "iamUsers", "iamuser", "people", "list", "data", "result", "results"]) {
+            if (Array.isArray(root[k])) { arr = root[k]; break; }
+          }
+          if (!arr.length) {
+            for (const k of Object.keys(root)) {
+              if (Array.isArray(root[k])) { arr = root[k]; break; }
+            }
+          }
+        }
+        if (!arr.length) break;
+        all.push(...arr);
+        if (arr.length < PAGE_SIZE) break;
+      }
+      if (all.length) {
+        log(`Loaded ${all.length} users via ${baseUrl}`, "ok");
+        return { items: all, source: baseUrl };
+      }
+    } catch (_) { /* try next */ }
+  }
+  return { items: [], source: null };
+}
+
+function normaliseUserRecord(u) {
+  // Defensive — different endpoints return very different shapes. We try
+  // to pull name/email/role/etc. from any of the common locations.
+  const direct = u || {};
+  const userObj = direct.user || direct;
+  const peopleObj = direct.people || direct.person || direct;
+  const name = userObj.name || direct.name || peopleObj.name || "";
+  const email = userObj.email || direct.email || peopleObj.email || "";
+  const phone = userObj.phone || direct.phone || peopleObj.phone || "";
+  const roleId = userObj.roleId || direct.roleId || (userObj.role && userObj.role.id) || (direct.role && direct.role.id) || null;
+  const appId  = userObj.appId  || direct.appId  || (userObj.application && userObj.application.id) || null;
+  const accessibleSpace = userObj.accessibleSpace || peopleObj.accessibleSpace || direct.accessibleSpace || [];
+  const groups = userObj.groups || peopleObj.groups || direct.groups || [];
+  const permissionSets = userObj.permissionSets || peopleObj.permissionSets || direct.permissionSets || [];
+  const status = userObj.userStatus || direct.userStatus || direct.status || (userObj.isActive === false ? "inactive" : userObj.isActive === true ? "active" : "");
+  const userId = userObj.id || direct.id || userObj.uid || null;
+  const peopleId = peopleObj.id || direct.peopleId || null;
+  // Spaces / groups may come as arrays of ids OR objects {id}. Flatten.
+  const flatIds = v => (Array.isArray(v) ? v.map(x => (x && typeof x === "object") ? (x.id ?? x.value) : x).filter(x => x != null) : []);
+  return {
+    name, email, phone,
+    roleId,
+    role: nameById("roles", roleId) || (roleId == null ? "" : String(roleId)),
+    appId,
+    app: appId == null ? "" : String(appId),
+    accessibleSpaceIds: flatIds(accessibleSpace),
+    groupIds: flatIds(groups),
+    permissionSetIds: flatIds(permissionSets),
+    status: status ? String(status) : "",
+    userId,
+    peopleId
+  };
+}
+
+function renderUserExport() {
+  const tbody = document.getElementById("userExportGridBody");
+  const rc = document.getElementById("userExportRowCount");
+  if (!tbody) return;
+  const rows = state.userExport.map((u, i) => `
+    <tr>
+      <td style="padding:6px 10px; color:var(--muted);">${i + 1}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.name)}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.email)}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.phone)}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.role)}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.app)}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.accessibleSpaceIds.join(", "))}</td>
+      <td style="padding:6px 10px;">${escapeHTML(namesByIds("groups", u.groupIds))}</td>
+      <td style="padding:6px 10px;">${escapeHTML(namesByIds("permissionSets", u.permissionSetIds))}</td>
+      <td style="padding:6px 10px;">${escapeHTML(u.status)}</td>
+      <td style="padding:6px 10px; color:var(--muted); font-family:ui-monospace,monospace; font-size:11px;">${u.userId ?? ""}</td>
+      <td style="padding:6px 10px; color:var(--muted); font-family:ui-monospace,monospace; font-size:11px;">${u.peopleId ?? ""}</td>
+    </tr>`).join("");
+  tbody.innerHTML = rows;
+  if (rc) rc.textContent = `${state.userExport.length} user${state.userExport.length === 1 ? "" : "s"}`;
+  const dl = document.getElementById("btnUserExportXlsx");
+  if (dl) dl.disabled = state.userExport.length === 0;
+}
+
+function downloadUsersXlsx() {
+  if (!state.userExport.length || typeof XLSX === "undefined") return;
+  const sheetRows = [
+    ["Name", "Email", "Phone", "Role", "Role ID", "App ID", "Accessible Space IDs", "Groups", "Group IDs", "Permission Sets", "Permission Set IDs", "Status", "User ID", "People ID"]
+  ];
+  for (const u of state.userExport) {
+    sheetRows.push([
+      u.name, u.email, u.phone,
+      u.role, u.roleId ?? "",
+      u.appId ?? "",
+      u.accessibleSpaceIds.join(", "),
+      namesByIds("groups", u.groupIds),
+      u.groupIds.join(", "),
+      namesByIds("permissionSets", u.permissionSetIds),
+      u.permissionSetIds.join(", "),
+      u.status,
+      u.userId ?? "",
+      u.peopleId ?? ""
+    ]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Users");
+  const today = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `facilio-users-${today}.xlsx`);
+}
+
+document.addEventListener("click", async e => {
+  if (e.target.id === "btnUserExportFetch") {
+    const st = document.getElementById("userExportStatus");
+    if (st) st.textContent = "Fetching… this may take a moment for orgs with many users.";
+    state.userExport = [];
+    renderUserExport();
+    try {
+      const { items, source } = await fetchAllUsers();
+      if (!items.length) {
+        if (st) st.textContent = "✗ Couldn't fetch users via any known endpoint. Capture the URL Facilio's UI uses to list users and we'll plug it in.";
+        return;
+      }
+      state.userExport = items.map(normaliseUserRecord);
+      if (st) st.innerHTML = `✓ Loaded <b>${state.userExport.length}</b> users via <code>${escapeHTML(source)}</code>.`;
+      renderUserExport();
+    } catch (err) {
+      if (st) st.textContent = "✗ " + err.message;
+    }
+    return;
+  }
+  if (e.target.id === "btnUserExportXlsx") {
+    downloadUsersXlsx();
+    return;
+  }
+  if (e.target.id === "btnUserExportClear") {
+    state.userExport = [];
+    renderUserExport();
+    const st = document.getElementById("userExportStatus");
+    if (st) st.textContent = "";
+    return;
+  }
+});
+
 async function sendInviteForEmail(email) {
   const appId = Number(state.userDefaults.mainAppId || 0);
   // Facilio's invite endpoint shape — best guess based on captured adduser
@@ -12947,6 +13233,7 @@ document.addEventListener("click", e => {
     document.getElementById("userSubClient")?.classList.toggle("hidden", which !== "client");
     document.getElementById("userSubOccupant")?.classList.toggle("hidden", which !== "occupant");
     document.getElementById("userSubBulkInvite")?.classList.toggle("hidden", which !== "bulkInvite");
+    document.getElementById("userSubExport")?.classList.toggle("hidden", which !== "export");
     return;
   }
 
