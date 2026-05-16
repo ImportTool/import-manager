@@ -12493,14 +12493,19 @@ function renderUserQueue() {
 // sets live under iam endpoints; falling back to view/all if picklist isn't
 // available on a given org.
 async function loadIamPicklist(key, endpointBase) {
-  // Roles / permission sets / apps live under Facilio's IAM endpoints, NOT
-  // the regular /modules namespace. The captured adduser endpoint sits at
-  // /maintenance/api/v1/setup/iamuser/adduser, so by symmetry roles + perm
-  // sets + apps likely sit at /maintenance/api/v1/setup/iam<thing>/list.
-  // We still try plain /iam/<thing> and /setup/<thing> as fallbacks.
+  // Known good endpoints captured from Facilio's UI:
+  //   Roles  → GET /maintenance/api/v2/setup/getRoles   → {result:{Roles:[...]}}
+  //   Groups → GET /maintenance/api/v2/setup/getGroups  → {result:{groups:[...]}}
+  // Anything else falls back to a bunch of structural guesses.
   if (state.cache[key] && state.cache[key].length) return state.cache[key];
   const cap = endpointBase.charAt(0).toUpperCase() + endpointBase.slice(1);
+  // Per-key confirmed shortcuts (tried first).
+  const confirmed = {
+    roles: ["maintenance/api/v2/setup/getRoles"],
+    groups: ["maintenance/api/v2/setup/getGroups"]
+  }[key] || [];
   const variants = [
+    ...confirmed,
     // iam<Thing> compound prefix (matches /setup/iamuser/adduser pattern)
     `maintenance/api/v1/setup/iam${cap}/list?page=1&perPage=500`,
     `maintenance/api/v1/setup/iam${cap}s/list?page=1&perPage=500`,
@@ -12530,12 +12535,21 @@ async function loadIamPicklist(key, endpointBase) {
   for (const url of variants) {
     try {
       const data = await api("GET", url);
-      const root = data && data.data ? data.data : data;
+      // Facilio wraps in either {data:...} or {result:...}. Peel both.
+      let root = data;
+      if (root && root.data && typeof root.data === "object") root = root.data;
+      if (root && root.result && typeof root.result === "object") root = root.result;
       let arr = [];
       if (Array.isArray(root)) arr = root;
       else if (root && typeof root === "object") {
-        // Prefer the named array key matching the endpoint, then any array key.
-        const preferred = [endpointBase, endpointBase + "s", "list", "data", "result", "results"];
+        // Prefer the named array key, in any case. Facilio sometimes
+        // capitalises (e.g. "Roles" with a capital R).
+        const cap2 = endpointBase.charAt(0).toUpperCase() + endpointBase.slice(1);
+        const preferred = [
+          endpointBase, endpointBase + "s",
+          cap2, cap2 + "s",
+          "list", "data", "result", "results"
+        ];
         for (const k of preferred) {
           if (Array.isArray(root[k])) { arr = root[k]; break; }
         }
@@ -13042,20 +13056,25 @@ function namesByIds(cacheKey, ids) {
 }
 
 async function fetchAllUsers() {
-  // Try the most likely endpoints in order. First one that returns an
-  // array with usable user shapes wins. Paginate up to 100 pages.
+  // Known good shape (captured from Facilio UI):
+  //   GET /maintenance/api/v1/setup/iamuser/userlist?appId=<mainAppId>&page=N&perPage=50&withMFA=true
+  //   → { result: { users: [ {id, applicationId, role:{id,name}, peopleId, ...} ] } }
+  // The list does NOT include accessibleSpace — that needs a per-user
+  // detail call:
+  //   POST /maintenance/api/v2/setup/application/users/summary
+  //   body: { appId, ouId: user.id }
+  //   → { result: { user: { accessibleSpace: [...], role, ... } } }
+  const appId = Number(state.userDefaults.mainAppId || 0);
+  if (!appId) {
+    throw new Error("Set Main App ID in Defaults (under Main App sub-tab) first — needed to scope the user list to the right app.");
+  }
+  const PAGE_SIZE = 50;
   const tries = [
-    "maintenance/api/v1/setup/iamuser/list",
-    "maintenance/api/v1/setup/iamuser",
-    "maintenance/api/v3/setup/iamuser/list",
-    "maintenance/api/v3/setup/iamUser/list",
-    "maintenance/api/v1/setup/users/list",
-    "maintenance/api/v3/setup/users/list",
-    "maintenance/api/v3/people/view/all?moduleName=people",
-    "maintenance/api/v3/modules/people/view/all?moduleName=people",
-    "maintenance/api/v3/picklist/users"
+    `maintenance/api/v1/setup/iamuser/userlist?appId=${appId}&withMFA=true`,
+    `maintenance/api/v2/setup/iamuser/userlist?appId=${appId}&withMFA=true`,
+    `maintenance/api/v1/setup/iamuser/userlist?appId=${appId}`,
+    `maintenance/api/v3/people/view/all?moduleName=people`  // last-resort fallback
   ];
-  const PAGE_SIZE = 100;
   for (const baseUrl of tries) {
     try {
       const all = [];
@@ -13063,11 +13082,13 @@ async function fetchAllUsers() {
         const sep = baseUrl.includes("?") ? "&" : "?";
         const url = `${baseUrl}${sep}page=${page}&perPage=${PAGE_SIZE}`;
         const res = await api("GET", url);
-        const root = res && res.data ? res.data : res;
+        // Unwrap data/result wrappers.
+        let root = res;
+        if (root && root.data && typeof root.data === "object") root = root.data;
+        if (root && root.result && typeof root.result === "object") root = root.result;
         let arr = [];
         if (Array.isArray(root)) arr = root;
         else if (root && typeof root === "object") {
-          // Prefer named arrays
           for (const k of ["users", "iamUsers", "iamuser", "people", "list", "data", "result", "results"]) {
             if (Array.isArray(root[k])) { arr = root[k]; break; }
           }
@@ -13083,42 +13104,76 @@ async function fetchAllUsers() {
       }
       if (all.length) {
         log(`Loaded ${all.length} users via ${baseUrl}`, "ok");
-        return { items: all, source: baseUrl };
+        return { items: all, source: baseUrl, appId };
       }
     } catch (_) { /* try next */ }
   }
-  return { items: [], source: null };
+  return { items: [], source: null, appId };
 }
 
-function normaliseUserRecord(u) {
-  // Defensive — different endpoints return very different shapes. We try
-  // to pull name/email/role/etc. from any of the common locations.
+// Pull accessibleSpace (and any other detail-only fields) for a single user.
+// Returns null on failure so the caller can fall back gracefully.
+async function fetchUserDetail(ouId, appId) {
+  if (!ouId || !appId) return null;
+  const body = { appId: Number(appId), ouId: Number(ouId) };
+  try {
+    const res = await api("POST", "maintenance/api/v2/setup/application/users/summary", body);
+    let root = res;
+    if (root && root.data && typeof root.data === "object") root = root.data;
+    if (root && root.result && typeof root.result === "object") root = root.result;
+    return root && root.user ? root.user : null;
+  } catch (_) { return null; }
+}
+
+function normaliseUserRecord(u, detail) {
+  // Combines the list-record (u) with optional per-user detail (detail).
+  // List shape (from iamuser/userlist):
+  //   { id, applicationId, roleId, role:{id,name,label}, peopleId,
+  //     people:{...}, user:{name,email,phone,inviteAcceptStatus,userStatus,...} }
+  // Detail shape (from application/users/summary):
+  //   { id, accessibleSpace:[...], permissionSets:[...], role:{...}, name,
+  //     email, userStatus, inviteAcceptStatus, ... }
   const direct = u || {};
-  const userObj = direct.user || direct;
+  const userObj = direct.user || detail || direct;
   const peopleObj = direct.people || direct.person || direct;
-  const name = userObj.name || direct.name || peopleObj.name || "";
-  const email = userObj.email || direct.email || peopleObj.email || "";
-  const phone = userObj.phone || direct.phone || peopleObj.phone || "";
-  const roleId = userObj.roleId || direct.roleId || (userObj.role && userObj.role.id) || (direct.role && direct.role.id) || null;
-  const appId  = userObj.appId  || direct.appId  || (userObj.application && userObj.application.id) || null;
-  const accessibleSpace = userObj.accessibleSpace || peopleObj.accessibleSpace || direct.accessibleSpace || [];
-  const groups = userObj.groups || peopleObj.groups || direct.groups || [];
-  const permissionSets = userObj.permissionSets || peopleObj.permissionSets || direct.permissionSets || [];
-  const status = userObj.userStatus || direct.userStatus || direct.status || (userObj.isActive === false ? "inactive" : userObj.isActive === true ? "active" : "");
-  const userId = userObj.id || direct.id || userObj.uid || null;
-  const peopleId = peopleObj.id || direct.peopleId || null;
-  // Spaces / groups may come as arrays of ids OR objects {id}. Flatten.
+  const det = detail || {};
+
+  const name = det.name || userObj.name || direct.name || peopleObj.name || "";
+  const email = det.email || userObj.email || direct.email || peopleObj.email || "";
+  const phone = det.mobile || det.phone || userObj.mobile || userObj.phone || direct.phone || peopleObj.phone || "";
+  const roleObj = det.role || direct.role || userObj.role || null;
+  const roleId = (roleObj && roleObj.id) || det.roleId || direct.roleId || userObj.roleId || null;
+  const roleName = (roleObj && (roleObj.name || roleObj.label)) || nameById("roles", roleId) || (roleId == null ? "" : String(roleId));
+  const appId  = det.applicationId || direct.applicationId || direct.appId || userObj.appId || null;
+  const accessibleSpace = det.accessibleSpace || userObj.accessibleSpace || peopleObj.accessibleSpace || direct.accessibleSpace || [];
+  const groups = det.groups || userObj.groups || peopleObj.groups || direct.groups || [];
+  const permissionSets = det.permissionSets || userObj.permissionSets || peopleObj.permissionSets || direct.permissionSets || [];
+  const userId = direct.id || det.id || userObj.id || direct.uid || null;
+  const peopleId = direct.peopleId || peopleObj.id || det.peopleId || null;
+
+  // Status — combine userStatus + inviteAcceptStatus + invitedTime into a
+  // human-readable string.
+  const userStatus = det.userStatus ?? direct.userStatus ?? userObj.userStatus;
+  const inviteAccepted = det.inviteAcceptStatus ?? direct.inviteAcceptStatus ?? userObj.inviteAcceptStatus;
+  const invitedTime = det.invitedTime ?? direct.invitedTime ?? userObj.invitedTime;
+  let statusStr = "";
+  if (userStatus === false) statusStr = "Inactive";
+  else if (inviteAccepted === true) statusStr = "Active (invite accepted)";
+  else if (inviteAccepted === false && invitedTime && invitedTime > 0) statusStr = "Invited (pending)";
+  else if (userStatus === true) statusStr = "Active";
+  else if (typeof userStatus !== "undefined" && userStatus !== null) statusStr = String(userStatus);
+
   const flatIds = v => (Array.isArray(v) ? v.map(x => (x && typeof x === "object") ? (x.id ?? x.value) : x).filter(x => x != null) : []);
   return {
     name, email, phone,
     roleId,
-    role: nameById("roles", roleId) || (roleId == null ? "" : String(roleId)),
+    role: roleName,
     appId,
     app: appId == null ? "" : String(appId),
     accessibleSpaceIds: flatIds(accessibleSpace),
     groupIds: flatIds(groups),
     permissionSetIds: flatIds(permissionSets),
-    status: status ? String(status) : "",
+    status: statusStr,
     userId,
     peopleId
   };
@@ -13179,17 +13234,36 @@ function downloadUsersXlsx() {
 document.addEventListener("click", async e => {
   if (e.target.id === "btnUserExportFetch") {
     const st = document.getElementById("userExportStatus");
-    if (st) st.textContent = "Fetching… this may take a moment for orgs with many users.";
+    if (st) st.textContent = "Fetching user list…";
     state.userExport = [];
     renderUserExport();
     try {
-      const { items, source } = await fetchAllUsers();
+      const { items, source, appId } = await fetchAllUsers();
       if (!items.length) {
-        if (st) st.textContent = "✗ Couldn't fetch users via any known endpoint. Capture the URL Facilio's UI uses to list users and we'll plug it in.";
+        if (st) st.textContent = "✗ Couldn't fetch users via any known endpoint. Make sure Main App ID is set in Defaults.";
         return;
       }
-      state.userExport = items.map(normaliseUserRecord);
-      if (st) st.innerHTML = `✓ Loaded <b>${state.userExport.length}</b> users via <code>${escapeHTML(source)}</code>.`;
+      // Render the list-only data first so the user sees something quickly.
+      state.userExport = items.map(u => normaliseUserRecord(u, null));
+      renderUserExport();
+      if (st) st.innerHTML = `✓ Loaded <b>${items.length}</b> users via <code>${escapeHTML(source)}</code>. Fetching accessible-space for each…`;
+      // Then fetch per-user detail (accessibleSpace lives only on the
+      // summary endpoint, not the list endpoint). Do it in small parallel
+      // batches so 100 users doesn't blast 100 simultaneous requests.
+      const BATCH = 4;
+      let done = 0;
+      for (let i = 0; i < items.length; i += BATCH) {
+        const slice = items.slice(i, i + BATCH);
+        await Promise.all(slice.map(async (u, idx) => {
+          const ouId = u.id || u.ouid;
+          const detail = await fetchUserDetail(ouId, appId);
+          state.userExport[i + idx] = normaliseUserRecord(u, detail);
+          done++;
+        }));
+        if (st) st.innerHTML = `✓ Loaded <b>${items.length}</b> users via <code>${escapeHTML(source)}</code>. Enriched <b>${done}</b> / ${items.length} with accessible-space…`;
+        renderUserExport();
+      }
+      if (st) st.innerHTML = `✓ <b>${items.length}</b> users with full detail loaded. Click <b>Download Excel</b> to export.`;
       renderUserExport();
     } catch (err) {
       if (st) st.textContent = "✗ " + err.message;
